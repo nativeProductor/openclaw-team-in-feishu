@@ -1,0 +1,34 @@
+{
+  "name": "oc-feishu-link",
+  "version": "0.1.0",
+  "description": "Wire OpenClaw agents into Feishu group chats with two collaboration modes (round-robin / free-speak). The daemon polls group threads, mirrors transcripts, and re-invokes the host LLM after each member reply — letting your agents debate inside Feishu without bespoke webhook plumbing.",
+  "type": "module",
+  "main": "lib/daemon.js",
+  "bin": {
+    "oc-feishu-link": "bin/oc-feishu-link.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "templates",
+    "examples",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node bin/oc-feishu-link.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "keywords": [
+    "openclaw",
+    "feishu",
+    "lark",
+    "multi-agent",
+    "group-chat",
+    "orchestrator"
+  ]
+}

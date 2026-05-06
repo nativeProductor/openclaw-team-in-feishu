@@ -1,0 +1,39 @@
+[Unit]
+Description=oc-feishu-link orchestrator daemon (OpenClaw agents in Feishu groups)
+After=network-online.target
+Wants=network-online.target
+# If you run openclaw-gateway as a user systemd unit, this won't help directly;
+# the daemon does its own preflight against `openclaw channels status --probe`
+# at startup so a healthy gateway is required either way.
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/etc/oc-feishu-link
+# Secrets: put your env vars in a separate file readable only by root:
+#   /etc/oc-feishu-link/secrets.env
+#   PM_HOST_SECRET=...
+#   DEV_SECRET=...
+#   ...
+# Then chmod 600 it. systemd loads the file before ExecStart.
+EnvironmentFile=/etc/oc-feishu-link/secrets.env
+
+# Daemon logs to stderr/stdout — systemd captures into journal.
+# Use `oc-feishu-link daemon logs` (or journalctl -u oc-feishu-link -f) to tail.
+ExecStart=/usr/bin/node /usr/lib/node_modules/oc-feishu-link/bin/oc-feishu-link.js daemon start --config /etc/oc-feishu-link/oc-feishu-link.json
+
+# Restart on crash but back off to avoid tight loops on bad config.
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Hardening (optional — relax if you need broader fs access).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/log /root/oc/.shared
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

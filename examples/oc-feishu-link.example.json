@@ -1,0 +1,40 @@
+{
+  "$comment": "Example config. Replace cli_REPLACE_* / oc_REPLACE_* placeholders. Secrets use ${ENV_VAR} interpolation — set them in your shell before running daemon.",
+
+  "version": 1,
+  "openclawRoot": "/root/oc",
+  "transcriptDir": "/root/oc/.shared",
+  "openclawBin": "openclaw",
+  "polling": { "intervalMs": 2500, "openclawTimeoutSec": 180 },
+
+  "apps": [
+    { "appId": "cli_REPLACE_PM",      "appSecret": "${PM_HOST_SECRET}",    "agent": "pm-host",     "role": "产品助理",         "botName": "OpenClaw-PM" },
+    { "appId": "cli_REPLACE_DEV",     "appSecret": "${DEV_SECRET}",        "agent": "dev",         "role": "研发助理",         "botName": "OpenClaw-Dev" },
+    { "appId": "cli_REPLACE_MKT_A",   "appSecret": "${MKT_A_SECRET}",      "agent": "mkt-a",       "role": "市场助理",         "botName": "OpenClaw-MarketA" },
+    { "appId": "cli_REPLACE_QA",      "appSecret": "${QA_SECRET}",         "agent": "qa",          "role": "测试助理",         "botName": "OpenClaw-QA" },
+
+    { "appId": "cli_REPLACE_MKT_HOST","appSecret": "${MKT_HOST_SECRET}",   "agent": "mkt-host",    "role": "市场助理(主持人)", "botName": "OpenClaw-MarketHost" },
+    { "appId": "cli_REPLACE_FIN",     "appSecret": "${FIN_SECRET}",        "agent": "finance",     "role": "财务助理",         "botName": "OpenClaw-Finance" },
+    { "appId": "cli_REPLACE_SALES",   "appSecret": "${SALES_SECRET}",      "agent": "sales",       "role": "销售助理",         "botName": "OpenClaw-Sales" },
+    { "appId": "cli_REPLACE_PROC",    "appSecret": "${PROC_SECRET}",       "agent": "procurement", "role": "采购助理",         "botName": "OpenClaw-Procurement" }
+  ],
+
+  "chats": [
+    {
+      "name": "ProductReview",
+      "chatId": "oc_REPLACE_GROUP_A",
+      "mode": "round-robin",
+      "host": "pm-host",
+      "members": ["dev", "mkt-a", "qa"],
+      "modeOptions": { "maxRounds": 5, "endKeyword": "[END]" }
+    },
+    {
+      "name": "MarketingDecision",
+      "chatId": "oc_REPLACE_GROUP_B",
+      "mode": "free-speak",
+      "host": "mkt-host",
+      "members": ["finance", "sales", "procurement"],
+      "modeOptions": { "maxMessages": 25, "recentSpeakerCooldownMs": 8000, "endKeyword": "[END]" }
+    }
+  ]
+}

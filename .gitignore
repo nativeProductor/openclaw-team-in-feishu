@@ -1,0 +1,8 @@
+node_modules/
+*.log
+oc-feishu-link.json
+oc-feishu.config.json
+souls/
+.shared/
+transcript-*.md
+.DS_Store
