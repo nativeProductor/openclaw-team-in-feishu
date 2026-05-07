@@ -148,6 +148,30 @@ octf daemon start
 
 在飞书群里 `@<主持人 bot> <你的议题>`，主持人会开启 thread 并驱动讨论到收敛。
 
+### 把 team 绑到新群
+
+`init` 之后再要新增一个群：
+
+```bash
+# 1. 把 host + members 都加进新群作为机器人成员
+# 2. 用 chat add 绑定：
+octf chat add \
+  --chat oc_NEW_GROUP_ID \
+  --mode round-robin \
+  --host pm-host \
+  --members dev,mkt-a,qa \
+  --max-rounds 5
+
+# 3. 解析新群的 open_id + 回填 SOUL roster
+octf link --apply
+
+# 4. 如果 host/member 在新群里是首次出现，需要把新生成的 souls 拷到 agent workspace
+# 5. 重启 daemon
+octf daemon restart
+```
+
+解绑：`octf chat remove --chat oc_xxx`。查看：`octf chat list`。
+
 ---
 
 ## 测试
@@ -197,7 +221,8 @@ octf verify --chat <oc_xxx> --topic "烟测话题"
 | 命令 | 用途 |
 |---|---|
 | `octf init` | 交互式生成 config + SOUL 模板 |
-| `octf link [--apply]` | 验证全链路；`--apply` 还会把解析到的 open_id 回填 SOUL roster |
+| `octf chat add\|remove\|list` | 绑定 / 解绑 / 列出 team 服务的飞书群 |
+| `octf link [--apply]` | 验证全链路；`--apply` 自动把成员 bot 的 renderMode 设为 raw 并把 open_id 回填到 SOUL roster |
 | `octf daemon <start\|stop\|restart\|status\|logs>` | 运行 orchestrator |
 | `octf verify --chat <oc_xxx>` | 端到端烟测 |
 | `octf logs [--tail]` | tail daemon + openclaw 日志 |
@@ -220,6 +245,7 @@ octf verify --chat <oc_xxx> --topic "烟测话题"
 - 轮询周期 2.5s，用户 @ 到主持人开口典型 5–15s
 - 单 OpenClaw gateway = 单 LLM 队列，多群并发会排队
 - thread 只能由主持人 bot 输出 `[END]` 结束；真用户在 thread 内发消息无法打断讨论
+- 新增/移除 chat 后需要重启 daemon（配置只在启动时读一次）
 
 ---
 

@@ -149,6 +149,32 @@ octf daemon start
 
 In your Feishu group: `@<host_bot> <topic>`. The host opens a thread and the discussion runs to convergence.
 
+### Adding a chat later
+
+To bind your existing team to a new Feishu group (after `init`):
+
+```bash
+# 1. Add the host + members to the new Feishu group as bot members.
+# 2. Bind it via:
+octf chat add \
+  --chat oc_NEW_GROUP_ID \
+  --mode round-robin \
+  --host pm-host \
+  --members dev,mkt-a,qa \
+  --max-rounds 5
+
+# 3. Resolve open_ids + patch SOUL rosters for the new group:
+octf link --apply
+
+# 4. Copy any newly-rendered SOULs into agent workspaces (only if the
+# host or members weren't already serving another chat).
+
+# 5. Restart daemon:
+octf daemon restart
+```
+
+To unbind: `octf chat remove --chat oc_xxx`. To see all bound chats: `octf chat list`.
+
 ---
 
 ## Testing
@@ -198,7 +224,8 @@ Full annotated example: [examples/octf.example.json](examples/octf.example.json)
 | Command | Purpose |
 |---|---|
 | `octf init` | Interactive scaffold of config + SOUL templates |
-| `octf link [--apply]` | Validate wiring; with `--apply`, patch resolved open_ids into SOUL rosters |
+| `octf chat add\|remove\|list` | Bind / unbind / list Feishu groups your team serves |
+| `octf link [--apply]` | Validate wiring; with `--apply`, auto-fix renderMode and patch resolved open_ids into SOUL rosters |
 | `octf daemon <start\|stop\|restart\|status\|logs>` | Run the orchestrator |
 | `octf verify --chat <oc_xxx> [--topic "..."] [--timeout 600]` | End-to-end smoke test |
 | `octf logs [--tail]` | Tail correlated daemon + openclaw logs |
@@ -221,6 +248,7 @@ Full annotated example: [examples/octf.example.json](examples/octf.example.json)
 - Polling cadence is 2.5s; user-to-host latency is typically 5–15s
 - Single OpenClaw gateway = single LLM queue across all groups
 - Threads can only be ended by the host bot emitting `[END]`; humans cannot interrupt mid-discussion by posting in the thread
+- Adding or removing a chat requires a daemon restart (config is read at startup)
 
 ---
 

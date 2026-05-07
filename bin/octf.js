@@ -52,10 +52,15 @@ Usage:
 
 Commands:
   init                              Interactive: scaffold config + SOUL templates
-  link [--apply]                    Preflight check (auth, channels, membership).
-                                    With --apply: also patch resolved open_ids
-                                    into souls/<host>.md rosterTable (replacing
-                                    init's "ou_REPLACE_BY_LINK_COMMAND" placeholders)
+  link [--apply]                    Preflight check (auth, channels, membership,
+                                    renderMode). With --apply: auto-fix renderMode
+                                    on member bots and patch resolved open_ids
+                                    into souls/<host>.md rosterTable
+  chat add --chat <oc_xxx> --mode <round-robin|free-speak> --host <agent>
+           --members <a,b,c> [--name <label>] [--max-rounds N] [--max-messages N]
+                                    Bind a new Feishu group to your team
+  chat remove --chat <oc_xxx>       Unbind a chat
+  chat list                         List all bound chats
   daemon <start|stop|restart|status|logs>
                                     Run the orchestrator (or pair with systemd)
   verify --chat <oc_xxx> [--topic "..."] [--timeout 600]
@@ -92,6 +97,7 @@ async function withConfig(fn) {
 switch (sub) {
   case "init":           await cmdInit(); break;
   case "link":           await withConfig(cmdLink); break;
+  case "chat":           await withConfig((cfg) => cmdChat(cfg, positional[0])); break;
   case "daemon":         await cmdDaemon(positional[0] || "start"); break;
   case "verify":         await withConfig(cmdVerify); break;
   case "logs":           await withConfig(cmdLogs); break;
@@ -219,18 +225,171 @@ async function cmdInit() {
   console.log("  5. Run `octf daemon start`");
 }
 
+// ─── chat: add / remove / list bound groups ──────────────────────────────
+async function cmdChat(cfg, action) {
+  if (action === "add") return chatAdd(cfg);
+  if (action === "remove" || action === "rm") return chatRemove(cfg);
+  if (action === "list" || action === "ls" || !action) return chatList(cfg);
+  console.error(`unknown 'chat' action: ${action}`);
+  console.error("usage: octf chat <add|remove|list> [...]");
+  process.exit(2);
+}
+
+function chatList(cfg) {
+  if (cfg.chats.length === 0) { console.log("(no chats configured)"); return; }
+  for (const ch of cfg.chats) {
+    console.log(`${ch.name || "(unnamed)"}  ${ch.chatId}  mode=${ch.mode}`);
+    console.log(`  host:    ${ch.host}`);
+    console.log(`  members: ${ch.members.join(", ")}`);
+    if (ch.modeOptions) {
+      const opts = Object.entries(ch.modeOptions).map(([k, v]) => `${k}=${v}`).join(" ");
+      if (opts) console.log(`  options: ${opts}`);
+    }
+  }
+}
+
+async function chatAdd(cfg) {
+  const chatId = flags.chat;
+  const mode = flags.mode;
+  const host = flags.host;
+  const membersStr = flags.members;
+  if (!chatId || !mode || !host || !membersStr) {
+    console.error("usage: octf chat add --chat <oc_xxx> --mode <round-robin|free-speak> --host <agent> --members <a,b,c> [--name <label>] [--max-rounds N] [--max-messages N]");
+    process.exit(2);
+  }
+  if (!/^oc_/.test(chatId)) { console.error("--chat must start with oc_"); process.exit(2); }
+  if (mode !== "round-robin" && mode !== "free-speak") {
+    console.error("--mode must be 'round-robin' or 'free-speak'");
+    process.exit(2);
+  }
+  if (cfg.chats.some(c => c.chatId === chatId)) {
+    console.error(`chat ${chatId} already bound. To rebind, run \`octf chat remove --chat ${chatId}\` first.`);
+    process.exit(1);
+  }
+  const agents = new Set(cfg.apps.map(a => a.agent));
+  if (!agents.has(host)) { console.error(`host '${host}' not declared in apps[]; add it via the config first`); process.exit(2); }
+  const members = membersStr.split(",").map(s => s.trim()).filter(Boolean);
+  for (const m of members) {
+    if (!agents.has(m)) { console.error(`member '${m}' not declared in apps[]`); process.exit(2); }
+    if (m === host) { console.error(`'${m}' cannot be both host and member`); process.exit(2); }
+  }
+
+  const modeOptions = { endKeyword: "[END]" };
+  if (mode === "round-robin") {
+    modeOptions.maxRounds = parseInt(flags["max-rounds"] || "5", 10);
+  } else {
+    modeOptions.maxMessages = parseInt(flags["max-messages"] || "25", 10);
+    modeOptions.recentSpeakerCooldownMs = 8000;
+  }
+  const chat = {
+    name: flags.name || chatId.slice(-6),
+    chatId, mode, host, members, modeOptions,
+  };
+
+  // Append to chats[] in the on-disk config (preserve formatting where possible).
+  const raw = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  raw.chats = raw.chats || [];
+  raw.chats.push({ name: chat.name, chatId, mode, host, members, modeOptions });
+  fs.writeFileSync(configPath, JSON.stringify(raw, null, 2) + "\n");
+  console.log(`✓ added chat "${chat.name}" (${chatId}) to ${configPath}`);
+
+  // Render a SOUL.md file for the host if souls/ dir exists alongside config
+  const soulsDir = path.join(path.dirname(configPath), "souls");
+  if (fs.existsSync(soulsDir)) {
+    const hostApp = cfg.apps.find(a => a.agent === host);
+    const memberApps = members.map(m => cfg.apps.find(a => a.agent === m));
+    const sharedTranscriptPath = path.join(cfg.transcriptDir || (cfg.openclawRoot ? cfg.openclawRoot + "/.shared" : "/var/lib/octf/shared"), `transcript-${chatId}.md`);
+    const tplName = mode === "free-speak" ? "host-free-speak.md.tpl" : "host-round-robin.md.tpl";
+    const placeholderRoster = memberApps.map(m => ({ role: m.role, openId: "ou_REPLACE_BY_LINK_COMMAND" }));
+    const hostVars = {
+      host: { role: hostApp.role, style: "（按需填写主持人风格）" },
+      sharedTranscriptPath,
+      roleBullets: roleBullets(memberApps.map(m => ({ role: m.role }))),
+      rosterTable: rosterTable(placeholderRoster),
+      rules: { maxRounds: modeOptions.maxRounds || 5, maxMessages: modeOptions.maxMessages || 25, endKeyword: "[END]" },
+    };
+    const hostSoulPath = path.join(soulsDir, `${host}.md`);
+    if (!fs.existsSync(hostSoulPath)) {
+      fs.writeFileSync(hostSoulPath, render(tplName, hostVars));
+      console.log(`✓ rendered ${hostSoulPath}`);
+    }
+    for (const m of memberApps) {
+      const memberSoulPath = path.join(soulsDir, `${m.agent}.md`);
+      if (!fs.existsSync(memberSoulPath)) {
+        const memberVars = {
+          host: { role: hostApp.role },
+          member: { role: m.role, style: "（按需填写专业风格）", behaviorClause: "（按需填写发言铁律）" },
+          modeLabel: mode === "free-speak" ? "自由发言" : "轮流发言",
+          sharedTranscriptPath,
+          rules: { endKeyword: "[END]" },
+        };
+        const memberTpl = mode === "free-speak" ? "member-free-speak.md.tpl" : "member-round-robin.md.tpl";
+        fs.writeFileSync(memberSoulPath, render(memberTpl, memberVars));
+        console.log(`✓ rendered ${memberSoulPath}`);
+      }
+    }
+  }
+
+  console.log("\nNext:");
+  console.log("  1. Edit souls/*.md if you rendered fresh ones above (fill in business persona)");
+  console.log("  2. Copy them into your agent workspaces (cp souls/<agent>.md /path/to/oc/<agent>/workspace/SOUL.md)");
+  console.log("  3. Run `octf link --apply` to resolve open_ids and patch SOUL rosters");
+  console.log("  4. Restart daemon to pick up the new chat: `octf daemon restart`");
+}
+
+function chatRemove(cfg) {
+  const chatId = flags.chat;
+  if (!chatId) { console.error("usage: octf chat remove --chat <oc_xxx>"); process.exit(2); }
+  const raw = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const before = raw.chats?.length || 0;
+  raw.chats = (raw.chats || []).filter(c => c.chatId !== chatId);
+  if (raw.chats.length === before) {
+    console.error(`chat ${chatId} not in config`);
+    process.exit(1);
+  }
+  fs.writeFileSync(configPath, JSON.stringify(raw, null, 2) + "\n");
+  console.log(`✓ removed chat ${chatId} from ${configPath}`);
+  console.log("Restart daemon to apply: `octf daemon restart`");
+}
+
 // ─── link: preflight checklist ────────────────────────────────────────────
 async function cmdLink(cfg) {
   const checklist = [];
   const note = (level, msg) => checklist.push({ level, msg });
 
-  // [1] openclaw preflight
+  // [1] openclaw preflight (host disabled / member enabled / member renderMode=raw)
   console.log("\n[1] openclaw channels");
-  const pre = preflight(cfg);
+  let pre = preflight(cfg);
   if (pre.ok) {
-    note("ok", `openclaw channels: ${pre.hostCount} hosts disabled, ${pre.memberCount} members enabled`);
+    note("ok", `openclaw channels: ${pre.hostCount} hosts disabled, ${pre.memberCount} members enabled, all renderMode=raw`);
   } else {
-    for (const r of pre.reasons) note("err", r);
+    // If --apply was passed, try to auto-fix renderMode violations (the only
+    // class of violation it's safe to silently fix; we never auto-flip
+    // host-enabled / member-disabled because those have permission implications).
+    if (flags.apply) {
+      const renderModeFixed = [];
+      for (const reason of pre.reasons) {
+        const m = reason.match(/openclaw config set (channels\.feishu\.accounts\.bot-cli_[a-z0-9]+\.renderMode) raw/);
+        if (m) {
+          try {
+            execFileSync(cfg.openclawBin || "openclaw", ["config", "set", m[1], "raw"],
+              { stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1024 * 1024 });
+            renderModeFixed.push(m[1].split(".").slice(-2, -1)[0]);
+          } catch (e) {
+            note("err", `auto-fix renderMode failed for ${m[1]}: ${e.message}`);
+          }
+        }
+      }
+      if (renderModeFixed.length) {
+        note("ok", `--apply set renderMode=raw on: ${renderModeFixed.join(", ")} (restart openclaw-gateway to take effect)`);
+        pre = preflight(cfg); // re-check
+      }
+    }
+    if (pre.ok) {
+      note("ok", `openclaw channels: ${pre.hostCount} hosts disabled, ${pre.memberCount} members enabled`);
+    } else {
+      for (const r of pre.reasons) note("err", r);
+    }
   }
 
   // [2] Feishu auth per app
