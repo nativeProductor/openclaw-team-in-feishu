@@ -1,4 +1,4 @@
-# oc-feishu-link
+# openclaw-team-in-feishu
 
 > 让你已有的 N 个 OpenClaw 智能体在飞书群里**协作讨论**。两种模式开箱即用：**轮流发言**（host 按顺序点名）和**自由发言**（成员自主决定要不要插话）。
 
@@ -6,7 +6,7 @@
 
 ## 1. 这个项目是什么
 
-你已经用 OpenClaw 做出了 N 个智能体（产品助理、研发助理、测试助理、市场助理 ……），每个 agent 自己都跑得通。`oc-feishu-link` 把它们接到一个或多个飞书群里，**让它们能在群里以自然对话方式讨论一个议题，最后由主持人 agent 收口出结论**。
+你已经用 OpenClaw 做出了 N 个智能体（产品助理、研发助理、测试助理、市场助理 ……），每个 agent 自己都跑得通。`openclaw-team-in-feishu` 把它们接到一个或多个飞书群里，**让它们能在群里以自然对话方式讨论一个议题，最后由主持人 agent 收口出结论**。
 
 **它不做的事**：
 - 不替你创建 OpenClaw 智能体（用 OpenClaw 自己的 CLI）
@@ -59,7 +59,7 @@
               （检测 @host）   │                │ （reply_in_thread:true）
                               │                │
               ┌───────────────┴────────────────┴───────────┐
-              │  oc-feishu-link daemon                     │
+              │  octf daemon                     │
               │  （单进程，每个群一个独立 async loop）       │
               │                                             │
               │  state[chatId].threads[tid] 内存状态         │
@@ -121,11 +121,11 @@
 # 1. 安装。当前 v0.1 还没发 npm registry，从 GitHub clone + npm link：
 git clone https://github.com/nativeProductor/openclaw-team-in-feishu.git
 cd openclaw-team-in-feishu && npm install && sudo npm link
-oc-feishu-link --help    # 验证
+octf --help    # 验证
 
 # 2. 交互式生成 config + SOUL 模板（必须在交互终端，piped stdin 不行）
-oc-feishu-link init
-# → ./oc-feishu-link.json
+octf init
+# → ./octf.json
 # → ./souls/<agent>.md  （每个 agent 一份，含占位符）
 
 # 3. 编辑 souls/<agent>.md 填入业务人设。
@@ -134,7 +134,7 @@ $EDITOR souls/pm-host.md
 
 # 4. 把秘钥放到环境变量（config 里 ${VAR} 引用），然后 link 验证
 export PM_HOST_SECRET=...; export DEV_SECRET=...; export QA_SECRET=...
-oc-feishu-link link
+octf link
 # 期望输出：n pass, 0 warn, 0 fail
 # 任何 ✗ 必须先修
 
@@ -144,7 +144,7 @@ cp souls/dev.md     /path/to/oc/dev/workspace/SOUL.md
 # ... 每个 agent 一遍
 
 # 6. 启动 daemon（前台；生产用 systemd 见 docs/deployment.md）
-oc-feishu-link daemon start
+octf daemon start
 ```
 
 启动完毕后，在飞书群里 `@<host_bot_name> 启动需求评审：<你的议题>` 就能触发讨论。
@@ -152,7 +152,7 @@ oc-feishu-link daemon start
 ### 不进飞书 UI 的端到端烟测
 
 ```bash
-oc-feishu-link verify --chat oc_xxx --topic "插件烟测"
+octf verify --chat oc_xxx --topic "插件烟测"
 # 自动用一个成员 bot 模拟用户 @ host，然后等 host 输出 [END]
 # 600 秒超时；通过则 exit 0 + 打印 "✓ END detected after Ns"
 ```
@@ -174,7 +174,7 @@ oc-feishu-link verify --chat oc_xxx --topic "插件烟测"
 
 ---
 
-## 6. 配置 schema（精简版，全字段见 [examples/](examples/oc-feishu-link.example.json)）
+## 6. 配置 schema（精简版，全字段见 [examples/](examples/octf.example.json)）
 
 ```jsonc
 {
@@ -228,8 +228,8 @@ oc-feishu-link verify --chat oc_xxx --topic "插件烟测"
 - 📦 [docs/deployment.md](docs/deployment.md) —— systemd / pm2 / Docker 部署、day-2 ops、上线 checklist
 - 🔐 [docs/feishu-permissions.md](docs/feishu-permissions.md) —— 飞书 scope per role 表 + native 插件 enable/disable + 错误码字典
 - 🛠️ [docs/developer-guide.md](docs/developer-guide.md) —— 架构图、加新模式、SOUL 模板变量、调试故障树
-- 📋 [examples/oc-feishu-link.example.json](examples/oc-feishu-link.example.json) —— 完整可参考的 8-bot/2-group 配置
-- 🧰 [examples/oc-feishu-link.service](examples/oc-feishu-link.service) —— systemd 单元模板（含硬化项）
+- 📋 [examples/octf.example.json](examples/octf.example.json) —— 完整可参考的 8-bot/2-group 配置
+- 🧰 [examples/octf.service](examples/octf.service) —— systemd 单元模板（含硬化项）
 
 ## License
 

@@ -18,7 +18,7 @@ This is the deep-dive companion to the README — read it after you've gotten th
                                   │ poll (2.5s) │ post reply
                                   │             │
                      ┌────────────┴─────────────┴───────────┐
-                     │  oc-feishu-link daemon (one Node     │
+                     │  octf daemon (one Node     │
                      │  process; per-chat async loops)      │
                      │                                       │
                      │  state[chatId].threads[tid]           │
@@ -63,7 +63,7 @@ Modes that need daemon changes:
 
 ## Customizing SOUL templates
 
-`templates/*.md.tpl` use Mustache-style `{{var}}` placeholders rendered by `lib/soul-templater.js`. Variables come from the per-agent context built in `bin/oc-feishu-link.js` `cmdInit` and `cmdLink`.
+`templates/*.md.tpl` use Mustache-style `{{var}}` placeholders rendered by `lib/soul-templater.js`. Variables come from the per-agent context built in `bin/octf.js` `cmdInit` and `cmdLink`.
 
 **Available host template variables**:
 - `{{host.role}}` — display label
@@ -86,10 +86,10 @@ To customize: copy `templates/host-round-robin.md.tpl` → your project, edit, t
 
 Quick triage tree:
 
-1. **`oc-feishu-link daemon status` says inactive?** Daemon crashed. Check `journalctl -u oc-feishu-link --since "10min ago"`.
+1. **`octf daemon status` says inactive?** Daemon crashed. Check `journalctl -u octf --since "10min ago"`.
 
 2. **Daemon active but no `[user @host main]` event in log when you @ the host?**
-   - Re-run `oc-feishu-link link` — likely `mentions[]` doesn't match `hostOpenId` (open_id resolution drift).
+   - Re-run `octf link` — likely `mentions[]` doesn't match `hostOpenId` (open_id resolution drift).
    - Check `pollMain`'s `mainProcessedIds` window — daemon restart re-reads ~30s of history; if your @ is older, it's filtered out.
 
 3. **`[kickoff]` logged but no `[thread NEW]`?**
@@ -112,20 +112,20 @@ A safe test loop on a dev box:
 
 ```bash
 # Reset state without losing config/souls
-sudo rm /var/log/oc-transcript.log
+sudo rm /var/log/octf.log
 rm -f $TRANSCRIPT_DIR/transcript-*.md
 for a in pm-host dev mkt-a qa; do
   rm -rf /root/.openclaw/agents/$a/sessions/*
 done
 
 # Restart daemon (preflight will run again)
-sudo systemctl restart oc-feishu-link
+sudo systemctl restart octf
 
 # End-to-end test (no real-user token needed)
-oc-feishu-link verify --chat oc_xxx --topic "test topic"
+octf verify --chat oc_xxx --topic "test topic"
 
 # Watch correlated logs in another terminal
-oc-feishu-link logs --tail
+octf logs --tail
 ```
 
 Expect ~5-7 minutes for round-robin (5 rounds → ~13 messages) or ~8-12 minutes for free-speak (4 candidates × multiple rounds). If `verify` exits with `✓ END detected` you've passed.

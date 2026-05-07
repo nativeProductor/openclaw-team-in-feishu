@@ -1,5 +1,5 @@
 [Unit]
-Description=oc-feishu-link orchestrator daemon (OpenClaw agents in Feishu groups)
+Description=openclaw-team-in-feishu orchestrator daemon (OpenClaw agents in Feishu groups)
 After=network-online.target
 Wants=network-online.target
 # If you run openclaw-gateway as a user systemd unit, this won't help directly;
@@ -9,18 +9,18 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/etc/oc-feishu-link
+WorkingDirectory=/etc/octf
 # Secrets: put your env vars in a separate file readable only by root:
-#   /etc/oc-feishu-link/secrets.env
+#   /etc/octf/secrets.env
 #   PM_HOST_SECRET=...
 #   DEV_SECRET=...
 #   ...
 # Then chmod 600 it. systemd loads the file before ExecStart.
-EnvironmentFile=/etc/oc-feishu-link/secrets.env
+EnvironmentFile=/etc/octf/secrets.env
 
 # Daemon logs to stderr/stdout — systemd captures into journal.
-# Use `oc-feishu-link daemon logs` (or journalctl -u oc-feishu-link -f) to tail.
-ExecStart=/usr/bin/node /usr/lib/node_modules/oc-feishu-link/bin/oc-feishu-link.js daemon start --config /etc/oc-feishu-link/oc-feishu-link.json
+# Use `octf daemon logs` (or journalctl -u octf -f) to tail.
+ExecStart=/usr/bin/node /usr/lib/node_modules/openclaw-team-in-feishu/bin/octf.js daemon start --config /etc/octf/octf.json
 
 # Restart on crash but back off to avoid tight loops on bad config.
 Restart=on-failure

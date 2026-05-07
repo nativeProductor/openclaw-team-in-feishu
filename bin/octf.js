@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// oc-feishu-link CLI. Five commands per architect review §4(a):
+// octf CLI. Five commands per architect review §4(a):
 //   init    interactive scaffold of config + souls/ for first-time users
 //   link    preflight + Feishu auth + group membership + openclaw channels
 //   daemon  run / stop / restart / logs / status (foreground or systemd)
@@ -7,8 +7,8 @@
 //   logs    tail daemon log + correlated openclaw runtime log
 //
 // Global flags: --config <path>, --json (machine-readable output where
-// applicable). Default config lookup: ./oc-feishu-link.json then
-// ./oc-feishu.config.json then ~/.config/oc-feishu-link/config.json.
+// applicable). Default config lookup: ./octf.json then
+// ./octf.json then ~/.config/octf/config.json.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -45,10 +45,10 @@ function parseArgv(argv) {
 
 function help() {
   console.log(`
-oc-feishu-link — wire OpenClaw agents into Feishu groups.
+octf — wire OpenClaw agents into Feishu groups.
 
 Usage:
-  oc-feishu-link <command> [args...] [--config <path>]
+  octf <command> [args...] [--config <path>]
 
 Commands:
   init                              Interactive: scaffold config + SOUL templates
@@ -64,7 +64,7 @@ Commands:
   help                              This message
 
 Global flags:
-  --config <path>                   Path to oc-feishu-link.json
+  --config <path>                   Path to octf.json
   --json                            Machine-readable output where applicable
 `);
 }
@@ -81,7 +81,7 @@ const configPath = (() => {
 async function withConfig(fn) {
   if (!configPath) {
     console.error("error: no config found.");
-    console.error("  pass --config <path>, or run `oc-feishu-link init` to scaffold one.");
+    console.error("  pass --config <path>, or run `octf init` to scaffold one.");
     process.exit(2);
   }
   const cfg = loadConfig(configPath);
@@ -105,18 +105,18 @@ switch (sub) {
 // ─── init: interactive scaffold ───────────────────────────────────────────
 async function cmdInit() {
   if (!process.stdin.isTTY) {
-    console.error("oc-feishu-link init requires an interactive terminal (TTY).");
+    console.error("octf init requires an interactive terminal (TTY).");
     console.error("");
     console.error("If you're trying to scaffold non-interactively, copy the example config instead:");
-    console.error("  cp $(npm root -g)/oc-feishu-link/examples/oc-feishu-link.example.json ./oc-feishu-link.json");
-    console.error("  $EDITOR ./oc-feishu-link.json     # fill in cli_xxx / oc_xxx / agent names");
-    console.error("Then `oc-feishu-link link` to validate.");
+    console.error("  cp $(npm root -g)/openclaw-team-in-feishu/examples/octf.example.json ./octf.json");
+    console.error("  $EDITOR ./octf.json     # fill in cli_xxx / oc_xxx / agent names");
+    console.error("Then `octf link` to validate.");
     console.error("");
     console.error("Or drive `init` via a PTY (e.g. `expect`, `script`, or interactive shell).");
     process.exit(2);
   }
-  if (fs.existsSync("./oc-feishu-link.json") && !flags.force) {
-    console.error("./oc-feishu-link.json already exists. Pass --force to overwrite.");
+  if (fs.existsSync("./octf.json") && !flags.force) {
+    console.error("./octf.json already exists. Pass --force to overwrite.");
     process.exit(1);
   }
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -124,7 +124,7 @@ async function cmdInit() {
     rl.question(`${q}${dflt ? ` [${dflt}]` : ""}: `, ans => res(ans.trim() || dflt || ""));
   });
 
-  console.log("\noc-feishu-link init — scaffolding config + SOUL templates.\n");
+  console.log("\noctf init — scaffolding config + SOUL templates.\n");
   const openclawRoot = await ask("openclaw root (where /<agent>/workspace lives)", "/root/oc");
   const transcriptDir = await ask("shared transcript dir", path.join(openclawRoot, ".shared"));
   const numChats = parseInt(await ask("how many groups (chats)", "1"), 10);
@@ -176,8 +176,8 @@ async function cmdInit() {
     apps,
     chats,
   };
-  fs.writeFileSync("./oc-feishu-link.json", JSON.stringify(config, null, 2) + "\n");
-  console.log("\n✓ wrote ./oc-feishu-link.json");
+  fs.writeFileSync("./octf.json", JSON.stringify(config, null, 2) + "\n");
+  console.log("\n✓ wrote ./octf.json");
 
   // Render SOUL.md templates per agent into souls/<agent>.md (NOT directly
   // into openclaw workspace — give the developer a chance to review).
@@ -186,7 +186,7 @@ async function cmdInit() {
     const memberAgents = chat.members.map(m => apps.find(a => a.agent === m));
     const hostApp = apps.find(a => a.agent === chat.host);
     const sharedTranscriptPath = path.join(transcriptDir, `transcript-${chat.chatId}.md`);
-    // Host SOUL (placeholder open_ids — `oc-feishu-link link` will fill them
+    // Host SOUL (placeholder open_ids — `octf link` will fill them
     // after first connecting to Feishu)
     const hostTpl = chat.mode === "free-speak" ? "host-free-speak.md.tpl" : "host-round-robin.md.tpl";
     const placeholderRoster = memberAgents.map(m => ({ role: m.role, openId: "ou_REPLACE_BY_LINK_COMMAND" }));
@@ -214,9 +214,9 @@ async function cmdInit() {
   console.log("\nNext steps:");
   console.log("  1. Edit ./souls/*.md to fill in business-specific persona + style");
   console.log("  2. Set the appSecret env vars (see config 'appSecret' fields)");
-  console.log("  3. Run `oc-feishu-link link` to verify the setup and resolve open_ids");
+  console.log("  3. Run `octf link` to verify the setup and resolve open_ids");
   console.log("  4. Copy ./souls/*.md into each agent's workspace/SOUL.md (link prints exact paths)");
-  console.log("  5. Run `oc-feishu-link daemon start`");
+  console.log("  5. Run `octf daemon start`");
 }
 
 // ─── link: preflight checklist ────────────────────────────────────────────
@@ -356,8 +356,8 @@ async function cmdLink(cfg) {
   console.log("\n[5] Transcript dir");
   try {
     fs.mkdirSync(cfg.transcriptDir, { recursive: true });
-    fs.writeFileSync(path.join(cfg.transcriptDir, ".oc-feishu-link.probe"), String(Date.now()));
-    fs.unlinkSync(path.join(cfg.transcriptDir, ".oc-feishu-link.probe"));
+    fs.writeFileSync(path.join(cfg.transcriptDir, ".octf.probe"), String(Date.now()));
+    fs.unlinkSync(path.join(cfg.transcriptDir, ".octf.probe"));
     note("ok", `${cfg.transcriptDir} writable`);
   } catch (e) {
     note("err", `${cfg.transcriptDir}: ${e.message}`);
@@ -373,7 +373,7 @@ async function cmdLink(cfg) {
   }
   console.log(`\n  ${pass} pass, ${warn} warn, ${fail} fail`);
   if (fail > 0) {
-    console.log("\nFix the ✗ items above before running `oc-feishu-link daemon start`.");
+    console.log("\nFix the ✗ items above before running `octf daemon start`.");
     process.exit(1);
   }
 }
@@ -404,19 +404,19 @@ async function cmdDaemon(action) {
     case "status": {
       // Best-effort systemd status; falls back to "no systemd unit found".
       try {
-        const out = execFileSync("systemctl", ["is-active", "oc-feishu-link"],
+        const out = execFileSync("systemctl", ["is-active", "octf"],
           { stdio: ["ignore", "pipe", "pipe"] }).toString().trim();
-        console.log(`oc-feishu-link.service: ${out}`);
+        console.log(`octf.service: ${out}`);
       } catch {
-        console.log("no oc-feishu-link.service registered with systemd. (Did you set up the unit file? See README.)");
+        console.log("no octf.service registered with systemd. (Did you set up the unit file? See README.)");
       }
       break;
     }
     case "stop": case "restart": {
       try {
-        execFileSync("systemctl", [action, "oc-feishu-link"], { stdio: "inherit" });
+        execFileSync("systemctl", [action, "octf"], { stdio: "inherit" });
       } catch (e) {
-        console.error(`systemctl ${action} oc-feishu-link failed. Are you running with systemd?`);
+        console.error(`systemctl ${action} octf failed. Are you running with systemd?`);
         process.exit(1);
       }
       break;
@@ -424,16 +424,16 @@ async function cmdDaemon(action) {
     case "logs": {
       // Convenience tail of the systemd journal for the unit.
       try {
-        execFileSync("journalctl", ["-u", "oc-feishu-link", "-f", "--no-pager"], { stdio: "inherit" });
+        execFileSync("journalctl", ["-u", "octf", "-f", "--no-pager"], { stdio: "inherit" });
       } catch (e) {
-        console.error("journalctl -u oc-feishu-link failed.");
+        console.error("journalctl -u octf failed.");
         process.exit(1);
       }
       break;
     }
     default:
       console.error(`unknown daemon action: ${action}`);
-      console.error("usage: oc-feishu-link daemon <start|stop|restart|status|logs>");
+      console.error("usage: octf daemon <start|stop|restart|status|logs>");
       process.exit(2);
   }
 }
@@ -442,7 +442,7 @@ async function cmdDaemon(action) {
 async function cmdVerify(cfg) {
   const chatId = flags.chat;
   if (!chatId) {
-    console.error("usage: oc-feishu-link verify --chat <oc_xxx> [--topic \"...\"] [--timeout 600]");
+    console.error("usage: octf verify --chat <oc_xxx> [--topic \"...\"] [--timeout 600]");
     process.exit(2);
   }
   const chat = cfg.chats.find(c => c.chatId === chatId);
@@ -467,7 +467,7 @@ async function cmdVerify(cfg) {
     console.error(`✗ cannot resolve open_id for host bot "${fc.hostBotName}" in chat ${chatId}.`);
     console.error(`  This blocks verify because we need to construct a valid <at user_id="ou_xxx"> tag.`);
     console.error(`  Fix (any one):`);
-    console.error(`    - Run \`oc-feishu-link link\` first; it will print exact resolution status.`);
+    console.error(`    - Run \`octf link\` first; it will print exact resolution status.`);
     console.error(`    - Have any user/bot @-mention "${fc.hostBotName}" in the chat once,`);
     console.error(`      then re-run verify (history-based resolver picks it up).`);
     console.error(`    - Add to config: chats[].hostOpenId="ou_xxx" or apps[<host>].openId="ou_xxx"`);
@@ -542,7 +542,7 @@ async function cmdVerify(cfg) {
 // ─── logs: correlated tail ────────────────────────────────────────────────
 async function cmdLogs(cfg) {
   // We default to a sane location; users can override via env var.
-  const daemonLog = process.env.OCFL_DAEMON_LOG || "/var/log/oc-transcript.log";
+  const daemonLog = process.env.OCFL_DAEMON_LOG || "/var/log/octf.log";
   const openclawLogDir = process.env.OCFL_OPENCLAW_LOG_DIR || "/tmp/openclaw";
   const today = new Date().toISOString().slice(0, 10);
   const openclawLog = path.join(openclawLogDir, `openclaw-${today}.log`);

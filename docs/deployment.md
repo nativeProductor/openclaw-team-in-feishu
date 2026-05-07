@@ -1,6 +1,6 @@
 # Deployment guide
 
-How to take `oc-feishu-link` from `npm install` to a daemon running 24/7 on your server.
+How to take `openclaw-team-in-feishu` from `npm install` to a daemon running 24/7 on your server.
 
 This assumes you've already done the work in [README.md](../README.md):
 - Created your Feishu apps (one per agent)
@@ -17,25 +17,25 @@ The most common shape: install globally, run as a system unit, secrets in a root
 
 ```bash
 # 1. Install. v0.1 isn't on npm registry yet — clone + npm link:
-git clone https://github.com/nativeProductor/openclaw-team-in-feishu.git /opt/oc-feishu-link
-cd /opt/oc-feishu-link
+git clone https://github.com/nativeProductor/openclaw-team-in-feishu.git /opt/openclaw-team-in-feishu
+cd /opt/openclaw-team-in-feishu
 sudo npm install
 sudo npm link
-which oc-feishu-link    # → /usr/bin/oc-feishu-link or similar
+which octf    # → /usr/bin/octf or similar
 
 # 2. Create config + secrets directory.
-sudo mkdir -p /etc/oc-feishu-link
+sudo mkdir -p /etc/octf
 
 # 3. Run init in that dir. MUST be in an interactive terminal (TTY) —
 #    `init` doesn't accept piped stdin (it'd silently lose answers).
-cd /etc/oc-feishu-link
-sudo oc-feishu-link init
+cd /etc/octf
+sudo octf init
 
 # 4. Edit ./souls/<agent>.md to fill in business persona / style / behavior clauses.
 sudo $EDITOR souls/pm-host.md     # repeat per agent
 
 # 5. Create the secrets file (root-only).
-sudo $EDITOR /etc/oc-feishu-link/secrets.env
+sudo $EDITOR /etc/octf/secrets.env
 ```
 
 `secrets.env` content (one line per env var your config references):
@@ -47,11 +47,11 @@ QA_SECRET=...
 ```
 
 ```bash
-sudo chmod 600 /etc/oc-feishu-link/secrets.env
+sudo chmod 600 /etc/octf/secrets.env
 
 # 6. Validate the wiring before starting the daemon.
-cd /etc/oc-feishu-link
-sudo bash -c 'set -a; source secrets.env; set +a; oc-feishu-link link --config /etc/oc-feishu-link/oc-feishu-link.json'
+cd /etc/octf
+sudo bash -c 'set -a; source secrets.env; set +a; octf link --config /etc/octf/octf.json'
 ```
 
 Expected: `link` reports a checklist with mostly `✓`. Fix any `✗`.
@@ -62,33 +62,33 @@ Expected: `link` reports a checklist with mostly `✓`. Fix any `✗`.
 
 ```bash
 for agent in pm-host dev mkt-a qa; do
-  sudo cp /etc/oc-feishu-link/souls/$agent.md /root/oc/$agent/workspace/SOUL.md
+  sudo cp /etc/octf/souls/$agent.md /root/oc/$agent/workspace/SOUL.md
 done
 ```
 
-(Re-running `init` doesn't overwrite this; it only edits `/etc/oc-feishu-link/souls/`.)
+(Re-running `init` doesn't overwrite this; it only edits `/etc/octf/souls/`.)
 
 ### Install + enable the systemd unit
 
 ```bash
-sudo cp /usr/lib/node_modules/oc-feishu-link/examples/oc-feishu-link.service \
-        /etc/systemd/system/oc-feishu-link.service
+sudo cp /usr/lib/node_modules/openclaw-team-in-feishu/examples/octf.service \
+        /etc/systemd/system/octf.service
 
 sudo systemctl daemon-reload
-sudo systemctl enable oc-feishu-link
-sudo systemctl start oc-feishu-link
+sudo systemctl enable octf
+sudo systemctl start octf
 
 # Watch it start (preflight runs first; should see "✓ openclaw channels: …").
-sudo journalctl -u oc-feishu-link -f --no-pager
+sudo journalctl -u octf -f --no-pager
 ```
 
-If preflight fails, the daemon refuses to start and journalctl shows the exact violations + fix commands. Apply them and `sudo systemctl restart oc-feishu-link`.
+If preflight fails, the daemon refuses to start and journalctl shows the exact violations + fix commands. Apply them and `sudo systemctl restart octf`.
 
 ### Smoke test the deployment
 
 ```bash
-sudo -E env $(cat /etc/oc-feishu-link/secrets.env | xargs) \
-  oc-feishu-link verify --chat oc_xxx --config /etc/oc-feishu-link/oc-feishu-link.json
+sudo -E env $(cat /etc/octf/secrets.env | xargs) \
+  octf verify --chat oc_xxx --config /etc/octf/octf.json
 ```
 
 This sends a synthetic trigger via one of your member bots, then watches the chat for the host's `[END]` message. Pass = deployment works end-to-end.
@@ -96,18 +96,18 @@ This sends a synthetic trigger via one of your member bots, then watches the cha
 ### Day 2 ops
 
 ```bash
-sudo systemctl status oc-feishu-link        # health
-sudo systemctl restart oc-feishu-link       # apply config / soul changes
-sudo journalctl -u oc-feishu-link -f        # live tail
+sudo systemctl status octf        # health
+sudo systemctl restart octf       # apply config / soul changes
+sudo journalctl -u octf -f        # live tail
 ```
 
 To upgrade:
 ```bash
-sudo npm install -g oc-feishu-link@latest
-sudo cp /usr/lib/node_modules/oc-feishu-link/examples/oc-feishu-link.service \
-        /etc/systemd/system/oc-feishu-link.service   # if unit file changed
+sudo npm install -g openclaw-team-in-feishu@latest
+sudo cp /usr/lib/node_modules/openclaw-team-in-feishu/examples/octf.service \
+        /etc/systemd/system/octf.service   # if unit file changed
 sudo systemctl daemon-reload
-sudo systemctl restart oc-feishu-link
+sudo systemctl restart octf
 ```
 
 ## Option 2 — `pm2` (Node ecosystem, no systemd)
@@ -122,9 +122,9 @@ npm install -g pm2
 cat > ecosystem.config.cjs <<'EOF'
 module.exports = {
   apps: [{
-    name: "oc-feishu-link",
-    script: "oc-feishu-link",
-    args: "daemon start --config /path/to/oc-feishu-link.json",
+    name: "octf",
+    script: "octf",
+    args: "daemon start --config /path/to/octf.json",
     env: {
       PM_HOST_SECRET: "...",
       DEV_SECRET: "...",
@@ -142,43 +142,43 @@ pm2 save
 pm2 startup     # follow the printed instructions to register pm2 at boot
 ```
 
-Operations: `pm2 logs oc-feishu-link`, `pm2 restart oc-feishu-link`, `pm2 status`.
+Operations: `pm2 logs octf`, `pm2 restart octf`, `pm2 status`.
 
 ## Option 3 — Docker
 
 ```dockerfile
 FROM node:20-alpine
 RUN apk add --no-cache jq curl
-RUN npm install -g oc-feishu-link
-WORKDIR /etc/oc-feishu-link
-COPY oc-feishu-link.json ./
+RUN npm install -g openclaw-team-in-feishu
+WORKDIR /etc/octf
+COPY octf.json ./
 COPY souls/ ./souls/
 # Secrets via Docker env / Docker secret, NOT baked into the image.
-CMD ["oc-feishu-link", "daemon", "start", "--config", "/etc/oc-feishu-link/oc-feishu-link.json"]
+CMD ["octf", "daemon", "start", "--config", "/etc/octf/octf.json"]
 ```
 
 Run with:
 ```bash
 docker run -d \
-  -v /var/lib/oc-feishu-link/shared:/var/lib/oc-feishu-link/shared \
+  -v /var/lib/octf/shared:/var/lib/octf/shared \
   --env-file /path/to/secrets.env \
-  --name oc-feishu-link \
-  yourorg/oc-feishu-link
+  --name octf \
+  yourorg/openclaw-team-in-feishu
 ```
 
-The OpenClaw gateway runs in a different container or on the host — `oc-feishu-link` shells out to the `openclaw` CLI, so the binary needs to be reachable. Mount the OpenClaw home or expose it via a network call accordingly.
+The OpenClaw gateway runs in a different container or on the host — `openclaw-team-in-feishu` shells out to the `openclaw` CLI, so the binary needs to be reachable. Mount the OpenClaw home or expose it via a network call accordingly.
 
 ## Pre-flight checklist (before going live)
 
 - [ ] All Feishu app scopes granted and version submitted (see [feishu-permissions.md](feishu-permissions.md))
 - [ ] All bots added to their target groups
 - [ ] Host bot's openclaw native plugin **disabled**, member bots' **enabled**
-- [ ] `oc-feishu-link link` reports 0 ✗
-- [ ] `oc-feishu-link verify --chat <each chatId>` exits with `✓ END detected` for every group in your config
+- [ ] `octf link` reports 0 ✗
+- [ ] `octf verify --chat <each chatId>` exits with `✓ END detected` for every group in your config
 - [ ] Secrets file is `chmod 600` and not in git
 - [ ] Daemon log directory writable by the user systemd runs as
 - [ ] Backup / rotation for `<transcriptDir>/transcript-*.md` (these grow indefinitely)
-- [ ] Monitoring alert on `journalctl -u oc-feishu-link --since "5min ago" | grep -i error` (basic health signal)
+- [ ] Monitoring alert on `journalctl -u octf --since "5min ago" | grep -i error` (basic health signal)
 
 ## Gotchas
 

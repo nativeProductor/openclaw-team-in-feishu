@@ -1,6 +1,6 @@
 # Feishu permissions
 
-oc-feishu-link talks to Feishu Open API on behalf of N self-built apps (one per agent). Each app must be configured in the Feishu developer console with the right scopes, event subscriptions, and group memberships.
+octf talks to Feishu Open API on behalf of N self-built apps (one per agent). Each app must be configured in the Feishu developer console with the right scopes, event subscriptions, and group memberships.
 
 **The host bot and member bots have different permission requirements.** Get this wrong and the discussion silently breaks.
 
@@ -26,7 +26,7 @@ For each Feishu group used in your config:
 
 1. Settings → 群机器人 → 添加机器人 → select your app
 2. Repeat for ALL apps in your config that reference this `chatId` (host + every member)
-3. Confirm visibility: as the developer, run `oc-feishu-link link` — it will list each chat's visible members and warn if any expected bot is missing
+3. Confirm visibility: as the developer, run `octf link` — it will list each chat's visible members and warn if any expected bot is missing
 
 ## OpenClaw native lark plugin: enable / disable per role
 
@@ -53,7 +53,7 @@ systemctl --user restart openclaw-gateway     # if user systemd
 # or: openclaw gateway restart                 # if managed by openclaw
 ```
 
-**Verify**: `openclaw channels status --probe` should show every host bot as `disabled, configured, stopped, error:disabled` and every member bot as `enabled, configured, running, works`. The `oc-feishu-link link` command bundles this check.
+**Verify**: `openclaw channels status --probe` should show every host bot as `disabled, configured, stopped, error:disabled` and every member bot as `enabled, configured, running, works`. The `octf link` command bundles this check.
 
 ## Common error codes
 
@@ -70,7 +70,7 @@ systemctl --user restart openclaw-gateway     # if user systemd
 Discussions are triggered when the daemon's `pollMain` sees an @-mention of the host in main chat. The mentioner can be:
 
 1. **A real user** in the Feishu group — simplest, no extra setup. Just type `@OpenClaw-PM <topic>` in the group and hit send.
-2. **A bot impersonating a user** — used for automated testing (`oc-feishu-link verify`) and CI. Daemon accepts mentions from any `app_id`-typed sender that is NOT the host itself. Use any of your member bots' app credentials to send `<at user_id="<host_open_id>">HostName</at> <topic>` via `POST /im/v1/messages`.
+2. **A bot impersonating a user** — used for automated testing (`octf verify`) and CI. Daemon accepts mentions from any `app_id`-typed sender that is NOT the host itself. Use any of your member bots' app credentials to send `<at user_id="<host_open_id>">HostName</at> <topic>` via `POST /im/v1/messages`.
 
 The third option (`im:message:send_as_user` scope to send as a real user via API) is only available to certain enterprise apps and is typically not approvable for self-built apps. We don't depend on it.
 
@@ -78,7 +78,7 @@ The third option (`im:message:send_as_user` scope to send as a real user via API
 
 - **Host native plugin enabled** → silent split-brain (two threads per kickoff, daemon stuck on the wrong one).
 - **Wrong appSecret in config** → `99991663` on every poll, daemon log floods, no discussions happen.
-- **Bot not in group** → `19001` on first poll for that chat; daemon will keep retrying forever. Visible in `oc-feishu-link link`.
-- **Member native plugin disabled** → in round-robin mode, host @s the member but no reply ever comes. Discussion stalls at PM's first dispatch. Visible in `oc-feishu-link link` (member status).
+- **Bot not in group** → `19001` on first poll for that chat; daemon will keep retrying forever. Visible in `octf link`.
+- **Member native plugin disabled** → in round-robin mode, host @s the member but no reply ever comes. Discussion stalls at PM's first dispatch. Visible in `octf link` (member status).
 - **`im:message:send_as_bot` scope missing on host** → host can't `reply_in_thread`, kickoff fails with `[post] err 50000` or similar.
 - **Two daemons polling the same chat with overlapping start_times** → duplicate kickoffs from the same user message. `kickoffsInFlight` only dedupes within one daemon process. **Run only one daemon per group.**
