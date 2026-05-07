@@ -145,15 +145,11 @@ $EDITOR souls/pm-host.md   # ... and one per agent
 export PM_HOST_SECRET=...; export DEV_SECRET=...
 # (recommended: put them in /etc/octf/secrets.env, chmod 600)
 
-# 4. Validate the wiring + auto-resolve open_ids into SOUL rosters
+# 4. Validate, auto-resolve open_ids, patch SOUL rosters, AND deploy souls
+#    into agent workspaces — all in one step:
 octf link --apply
 
-# 5. Deploy SOULs into agent workspaces
-for a in pm-host dev mkt-a qa; do
-  cp souls/$a.md /path/to/oc/$a/workspace/SOUL.md
-done
-
-# 6. Start the daemon
+# 5. Start the daemon
 octf daemon start
 ```
 
@@ -173,13 +169,10 @@ octf chat add \
   --members dev,mkt-a,qa \
   --max-rounds 5
 
-# 3. Resolve open_ids + patch SOUL rosters for the new group:
+# 3. Resolve open_ids, patch SOUL rosters, and deploy souls to workspaces:
 octf link --apply
 
-# 4. Copy any newly-rendered SOULs into agent workspaces (only if the
-# host or members weren't already serving another chat).
-
-# 5. Restart daemon:
+# 4. Restart daemon to pick up the new chat:
 octf daemon restart
 ```
 
@@ -235,7 +228,7 @@ Full annotated example: [examples/octf.example.json](examples/octf.example.json)
 |---|---|
 | `octf init` | Interactive scaffold of config + SOUL templates |
 | `octf chat add\|remove\|list` | Bind / unbind / list Feishu groups your team serves |
-| `octf link [--apply]` | Validate wiring; with `--apply`, auto-fix renderMode and patch resolved open_ids into SOUL rosters |
+| `octf link [--apply]` | Validate wiring (auth, channels, membership, SOUL.md presence). With `--apply`: resolve member open_ids, patch them into local `souls/<host>.md` rosters, and deploy `souls/*.md` into each agent's workspace |
 | `octf daemon <start\|stop\|restart\|status\|logs>` | Run the orchestrator |
 | `octf verify --chat <oc_xxx> [--topic "..."] [--timeout 600]` | End-to-end smoke test |
 | `octf logs [--tail]` | Tail correlated daemon + openclaw logs |

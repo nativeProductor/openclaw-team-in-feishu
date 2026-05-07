@@ -54,10 +54,11 @@ Commands:
   init                              Interactive: scaffold config + SOUL templates
   init --template                   Print a JSON config template to stdout
   init --from <path>                Apply a pre-filled JSON config (no Q&A)
-  link [--apply]                    Preflight check (auth, channels, membership,
-                                    renderMode). With --apply: auto-fix renderMode
-                                    on member bots and patch resolved open_ids
-                                    into souls/<host>.md rosterTable
+  link [--apply]                    Validate wiring (auth, channels, membership,
+                                    SOUL.md presence for chat-bound agents).
+                                    With --apply: resolve member open_ids, patch
+                                    them into souls/<host>.md rosterTable, and
+                                    deploy souls/*.md into each agent's workspace
   chat add --chat <oc_xxx> --mode <round-robin|free-speak> --host <agent>
            --members <a,b,c> [--name <label>] [--max-rounds N] [--max-messages N]
                                     Bind a new Feishu group to your team

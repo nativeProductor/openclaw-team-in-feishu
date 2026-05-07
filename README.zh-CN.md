@@ -144,15 +144,11 @@ $EDITOR souls/pm-host.md
 # 3. 设秘钥（建议放 /etc/octf/secrets.env，chmod 600）
 export PM_HOST_SECRET=...; export DEV_SECRET=...
 
-# 4. 验证全链路 + 自动回填 open_id 到 SOUL roster
+# 4. 验证全链路 + 自动回填 open_id 到 SOUL roster + 把 souls 部署到 agent workspace
+#    （一条命令做完）
 octf link --apply
 
-# 5. SOUL 拷贝到 agent workspace
-for a in pm-host dev mkt-a qa; do
-  cp souls/$a.md /path/to/oc/$a/workspace/SOUL.md
-done
-
-# 6. 启动 daemon
+# 5. 启动 daemon
 octf daemon start
 ```
 
@@ -172,11 +168,10 @@ octf chat add \
   --members dev,mkt-a,qa \
   --max-rounds 5
 
-# 3. 解析新群的 open_id + 回填 SOUL roster
+# 3. 解析新群的 open_id + 回填 SOUL roster + 部署 souls 到 workspace
 octf link --apply
 
-# 4. 如果 host/member 在新群里是首次出现，需要把新生成的 souls 拷到 agent workspace
-# 5. 重启 daemon
+# 4. 重启 daemon 让新配置生效
 octf daemon restart
 ```
 
@@ -232,7 +227,7 @@ octf verify --chat <oc_xxx> --topic "烟测话题"
 |---|---|
 | `octf init` | 交互式生成 config + SOUL 模板 |
 | `octf chat add\|remove\|list` | 绑定 / 解绑 / 列出 team 服务的飞书群 |
-| `octf link [--apply]` | 验证全链路；`--apply` 自动把成员 bot 的 renderMode 设为 raw 并把 open_id 回填到 SOUL roster |
+| `octf link [--apply]` | 验证全链路（auth / channels / membership / SOUL.md 存在性）。`--apply`：解析成员 open_id、回填到本地 `souls/<host>.md` 名册、并把 `souls/*.md` 部署到各 agent workspace |
 | `octf daemon <start\|stop\|restart\|status\|logs>` | 运行 orchestrator |
 | `octf verify --chat <oc_xxx>` | 端到端烟测 |
 | `octf logs [--tail]` | tail daemon + openclaw 日志 |
