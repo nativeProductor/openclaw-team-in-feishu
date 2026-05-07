@@ -101,6 +101,17 @@ switch (sub) {
 
 // ─── init: interactive scaffold ───────────────────────────────────────────
 async function cmdInit() {
+  if (!process.stdin.isTTY) {
+    console.error("oc-feishu-link init requires an interactive terminal (TTY).");
+    console.error("");
+    console.error("If you're trying to scaffold non-interactively, copy the example config instead:");
+    console.error("  cp $(npm root -g)/oc-feishu-link/examples/oc-feishu-link.example.json ./oc-feishu-link.json");
+    console.error("  $EDITOR ./oc-feishu-link.json     # fill in cli_xxx / oc_xxx / agent names");
+    console.error("Then `oc-feishu-link link` to validate.");
+    console.error("");
+    console.error("Or drive `init` via a PTY (e.g. `expect`, `script`, or interactive shell).");
+    process.exit(2);
+  }
   if (fs.existsSync("./oc-feishu-link.json") && !flags.force) {
     console.error("./oc-feishu-link.json already exists. Pass --force to overwrite.");
     process.exit(1);
@@ -230,27 +241,47 @@ async function cmdLink(cfg) {
     }
   }
 
-  // [3] Group membership
-  console.log("\n[3] Group membership + roster resolution");
+  // [3] Group membership + bot open_id resolution.
+  //
+  // Feishu's chats/{id}/members API only returns USER members, not bots
+  // (despite bots being chat members). We use a multi-path resolver that
+  // tries members API first, then scans recent message history for
+  // @-mentions matching the bot name, then falls back to manual config.
+  console.log("\n[3] Group membership + bot open_id resolution");
   const flat = flatten(cfg);
+  const { resolveBotOpenId } = await import("../lib/feishu.js");
   for (const ch of cfg.chats) {
     const fc = flat.chats[ch.chatId];
+    const hostApp = cfg.apps.find(a => a.appId === fc.hostApp);
     try {
-      const tok = await getTenantToken(fc.hostApp, cfg.apps.find(a => a.appId === fc.hostApp).appSecret);
-      const r = await listChatMembers(tok, ch.chatId);
-      if (r.code !== 0) { note("err", `${ch.name}: list members failed code=${r.code} msg=${r.msg}`); continue; }
-      const items = r.data?.items || [];
-      const names = items.map(it => it.name);
-      const hostMember = items.find(it => it.name === fc.hostBotName) || items.find(it => (it.name || "").includes(fc.hostBotName));
-      if (hostMember) note("ok", `${ch.name}: host "${fc.hostBotName}" found, open_id=${hostMember.member_id}`);
-      else note("err", `${ch.name}: host bot "${fc.hostBotName}" NOT in chat; visible: [${names.join(", ")}]`);
-
+      const hostRes = await resolveBotOpenId(hostApp.appId, hostApp.appSecret, ch.chatId, fc.hostBotName);
+      if (hostRes.openId) {
+        note("ok", `${ch.name}: host "${fc.hostBotName}" open_id=${hostRes.openId.slice(0, 14)}… (via ${hostRes.source})`);
+      } else if (ch.hostOpenId || hostApp.openId) {
+        note("ok", `${ch.name}: host "${fc.hostBotName}" open_id=${(ch.hostOpenId || hostApp.openId).slice(0, 14)}… (from config)`);
+      } else {
+        note("warn",
+          `${ch.name}: cannot resolve host "${fc.hostBotName}" open_id automatically. ` +
+          `Daemon will match @-mentions by name (usually fine). ` +
+          `To resolve: have anyone @-mention ${fc.hostBotName} in the chat once, OR ` +
+          `add chats[].hostOpenId / apps[<host>].openId to config.`);
+      }
+      // Member open_ids: less critical (round-robin members are reached by
+      // host's @-tag using the host's prompt-side roster; free-speak doesn't
+      // @ at all). Just check that the bot is configured + token works.
       for (const m of fc.memberAgents) {
         const memberApp = cfg.apps.find(a => a.agent === m);
-        const found = items.find(it => it.name === memberApp.botName) ||
-                       items.find(it => (it.name || "").includes(memberApp.role));
-        if (found) note("ok", `${ch.name}: member "${memberApp.role}" (${memberApp.botName}) → open_id=${found.member_id}`);
-        else note("err", `${ch.name}: member "${memberApp.role}" NOT in chat`);
+        const memRes = await resolveBotOpenId(memberApp.appId, memberApp.appSecret, ch.chatId, memberApp.botName);
+        if (memRes.openId) {
+          note("ok", `${ch.name}: member "${memberApp.role}" (${memberApp.botName}) open_id=${memRes.openId.slice(0, 14)}… (via ${memRes.source})`);
+        } else if (memberApp.openId) {
+          note("ok", `${ch.name}: member "${memberApp.role}" open_id from config`);
+        } else {
+          note("warn",
+            `${ch.name}: cannot resolve member "${memberApp.role}" open_id (non-blocking — ` +
+            `host's SOUL.md roster is what's used at runtime, and the host bot's view of ` +
+            `the member's open_id will be auto-injected if the host has ever seen the member speak).`);
+        }
       }
     } catch (e) {
       note("err", `${ch.name}: ${e.message}`);
@@ -373,16 +404,29 @@ async function cmdVerify(cfg) {
   const flat = flatten(cfg);
   const fc = flat.chats[chatId];
 
-  // Resolve host open_id (in case config doesn't have it yet)
-  const tok0 = await getTenantToken(triggerApp.appId, triggerApp.appSecret);
-  const r = await listChatMembers(tok0, chatId);
-  if (r.code !== 0) { console.error(`list members failed: ${r.code} ${r.msg}`); process.exit(1); }
-  const hostMember = r.data.items.find(it => it.name === fc.hostBotName) ||
-                      r.data.items.find(it => (it.name || "").includes(fc.hostBotName));
-  if (!hostMember) { console.error(`host bot "${fc.hostBotName}" not in chat`); process.exit(1); }
+  // Resolve host open_id with the same multi-path resolver as `link` /
+  // daemon — tries members API, then message history, then config override.
+  const { resolveBotOpenId } = await import("../lib/feishu.js");
+  let hostOpenId = chat.hostOpenId || hostApp.openId;
+  if (!hostOpenId) {
+    const r = await resolveBotOpenId(triggerApp.appId, triggerApp.appSecret, chatId, fc.hostBotName);
+    hostOpenId = r.openId;
+  }
+  if (!hostOpenId) {
+    console.error(`✗ cannot resolve open_id for host bot "${fc.hostBotName}" in chat ${chatId}.`);
+    console.error(`  This blocks verify because we need to construct a valid <at user_id="ou_xxx"> tag.`);
+    console.error(`  Fix (any one):`);
+    console.error(`    - Run \`oc-feishu-link link\` first; it will print exact resolution status.`);
+    console.error(`    - Have any user/bot @-mention "${fc.hostBotName}" in the chat once,`);
+    console.error(`      then re-run verify (history-based resolver picks it up).`);
+    console.error(`    - Add to config: chats[].hostOpenId="ou_xxx" or apps[<host>].openId="ou_xxx"`);
+    console.error(`      (the bot's open_id from its OWN app's perspective).`);
+    process.exit(1);
+  }
 
+  const tok0 = await getTenantToken(triggerApp.appId, triggerApp.appSecret);
   const topic = flags.topic || "插件 verify 烟测：请按你的 SOUL.md 跑一次完整讨论。";
-  const text = `<at user_id="${hostMember.member_id}">${fc.hostBotName}</at> ${topic}`;
+  const text = `<at user_id="${hostOpenId}">${fc.hostBotName}</at> ${topic}`;
   const sendResp = await sendChatMessage(tok0, chatId, text);
   if (sendResp.code !== 0) { console.error(`trigger failed: ${sendResp.code} ${sendResp.msg}`); process.exit(1); }
   const triggerMid = sendResp.data.message_id;

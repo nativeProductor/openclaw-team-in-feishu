@@ -16,15 +16,20 @@ The most common shape: install globally, run as a system unit, secrets in a root
 ### One-time setup
 
 ```bash
-# 1. Install the package globally (or pin a version).
-sudo npm install -g oc-feishu-link
+# 1. Install. v0.1 isn't on npm registry yet — clone + npm link:
+git clone https://github.com/nativeProductor/openclaw-team-in-feishu.git /opt/oc-feishu-link
+cd /opt/oc-feishu-link
+sudo npm install
+sudo npm link
+which oc-feishu-link    # → /usr/bin/oc-feishu-link or similar
 
 # 2. Create config + secrets directory.
 sudo mkdir -p /etc/oc-feishu-link
 
-# 3. Run init in that dir to scaffold the config + souls/ templates.
+# 3. Run init in that dir. MUST be in an interactive terminal (TTY) —
+#    `init` doesn't accept piped stdin (it'd silently lose answers).
 cd /etc/oc-feishu-link
-sudo oc-feishu-link init    # interactive
+sudo oc-feishu-link init
 
 # 4. Edit ./souls/<agent>.md to fill in business persona / style / behavior clauses.
 sudo $EDITOR souls/pm-host.md     # repeat per agent
@@ -45,8 +50,8 @@ QA_SECRET=...
 sudo chmod 600 /etc/oc-feishu-link/secrets.env
 
 # 6. Validate the wiring before starting the daemon.
-sudo -E env $(cat /etc/oc-feishu-link/secrets.env | xargs) \
-  oc-feishu-link link --config /etc/oc-feishu-link/oc-feishu-link.json
+cd /etc/oc-feishu-link
+sudo bash -c 'set -a; source secrets.env; set +a; oc-feishu-link link --config /etc/oc-feishu-link/oc-feishu-link.json'
 ```
 
 Expected: `link` reports a checklist with mostly `✓`. Fix any `✗`.
@@ -110,7 +115,9 @@ sudo systemctl restart oc-feishu-link
 If you don't have systemd (e.g. Docker, macOS dev), use `pm2`:
 
 ```bash
-npm install -g pm2 oc-feishu-link
+git clone https://github.com/nativeProductor/openclaw-team-in-feishu.git
+cd openclaw-team-in-feishu && npm install && sudo npm link
+npm install -g pm2
 
 cat > ecosystem.config.cjs <<'EOF'
 module.exports = {

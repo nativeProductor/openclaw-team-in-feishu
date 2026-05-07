@@ -118,10 +118,12 @@
 最简形态。生产环境配 systemd / pm2 / Docker 见 **[docs/deployment.md](docs/deployment.md)**。
 
 ```bash
-# 1. 安装
-npm install -g oc-feishu-link
+# 1. 安装。当前 v0.1 还没发 npm registry，从 GitHub clone + npm link：
+git clone https://github.com/nativeProductor/openclaw-team-in-feishu.git
+cd openclaw-team-in-feishu && npm install && sudo npm link
+oc-feishu-link --help    # 验证
 
-# 2. 交互式生成 config + SOUL 模板（不联网）
+# 2. 交互式生成 config + SOUL 模板（必须在交互终端，piped stdin 不行）
 oc-feishu-link init
 # → ./oc-feishu-link.json
 # → ./souls/<agent>.md  （每个 agent 一份，含占位符）
