@@ -52,7 +52,10 @@ Usage:
 
 Commands:
   init                              Interactive: scaffold config + SOUL templates
-  link                              Preflight check (auth, channels, membership)
+  link [--apply]                    Preflight check (auth, channels, membership).
+                                    With --apply: also patch resolved open_ids
+                                    into souls/<host>.md rosterTable (replacing
+                                    init's "ou_REPLACE_BY_LINK_COMMAND" placeholders)
   daemon <start|stop|restart|status|logs>
                                     Run the orchestrator (or pair with systemd)
   verify --chat <oc_xxx> [--topic "..."] [--timeout 600]
@@ -241,6 +244,10 @@ async function cmdLink(cfg) {
     }
   }
 
+  // [3a] If --apply is passed and we can resolve member open_ids from
+  // the host's perspective, patch ./souls/<host>.md's rosterTable in-place.
+  // This is the missing link between `init` (writes placeholders) and the
+  // daemon (which expects real open_ids in the host's SOUL).
   // [3] Group membership + bot open_id resolution.
   //
   // Feishu's chats/{id}/members API only returns USER members, not bots
@@ -249,7 +256,7 @@ async function cmdLink(cfg) {
   // @-mentions matching the bot name, then falls back to manual config.
   console.log("\n[3] Group membership + bot open_id resolution");
   const flat = flatten(cfg);
-  const { resolveBotOpenId } = await import("../lib/feishu.js");
+  const { resolveBotOpenId, resolveMemberOpenIdsForHost } = await import("../lib/feishu.js");
   for (const ch of cfg.chats) {
     const fc = flat.chats[ch.chatId];
     const hostApp = cfg.apps.find(a => a.appId === fc.hostApp);
@@ -285,6 +292,50 @@ async function cmdLink(cfg) {
       }
     } catch (e) {
       note("err", `${ch.name}: ${e.message}`);
+    }
+  }
+
+  // [3.5] If round-robin host: try to resolve all member open_ids from
+  // host's perspective and (if --apply) patch souls/<host>.md.
+  // Free-speak hosts don't @-mention members so they don't need a roster.
+  for (const ch of cfg.chats) {
+    if (ch.mode !== "round-robin") continue;
+    const fc = flat.chats[ch.chatId];
+    const hostApp = cfg.apps.find(a => a.appId === fc.hostApp);
+    const memberBotNames = ch.members.map(m => cfg.apps.find(a => a.agent === m).botName);
+    let memberOpenIds;
+    try {
+      memberOpenIds = await resolveMemberOpenIdsForHost(hostApp.appId, hostApp.appSecret, ch.chatId, memberBotNames);
+    } catch (e) {
+      note("warn", `${ch.name}: failed to resolve member open_ids from host perspective: ${e.message}`);
+      continue;
+    }
+    const unresolved = Object.entries(memberOpenIds).filter(([_, v]) => v == null).map(([k, _]) => k);
+    if (unresolved.length === 0) {
+      note("ok", `${ch.name}: all ${memberBotNames.length} member open_ids resolved from host perspective`);
+    } else {
+      note("warn",
+        `${ch.name}: cannot auto-resolve open_ids for [${unresolved.join(", ")}] from host's perspective. ` +
+        `Have the host bot @-mention each one once in this chat to populate the cache, ` +
+        `or fill them manually in souls/${hostApp.agent}.md rosterTable.`);
+    }
+    // Patch souls/<host>.md if it has placeholder rosterTable.
+    const soulPath = `./souls/${hostApp.agent}.md`;
+    if (flags.apply && fs.existsSync(soulPath)) {
+      let soul = fs.readFileSync(soulPath, "utf8");
+      let patched = 0;
+      for (const m of ch.members) {
+        const memberApp = cfg.apps.find(a => a.agent === m);
+        const oid = memberOpenIds[memberApp.botName];
+        if (!oid) continue;
+        const re = new RegExp(`<at user_id="ou_REPLACE_BY_LINK_COMMAND">(${memberApp.role})</at>`, "g");
+        const after = soul.replace(re, `<at user_id="${oid}">$1</at>`);
+        if (after !== soul) { soul = after; patched++; }
+      }
+      if (patched > 0) {
+        fs.writeFileSync(soulPath, soul);
+        note("ok", `${ch.name}: --apply patched ${patched} entries in ${soulPath}`);
+      }
     }
   }
 
@@ -437,18 +488,38 @@ async function cmdVerify(cfg) {
   const deadline = start + timeoutSec * 1000;
   const endKw = chat.modeOptions?.endKeyword || "[END]";
   let lastSeen = 0;
-  console.log(`watching chat for "${endKw}" from host (timeout ${timeoutSec}s)...`);
+  let threadId = null;
+  console.log(`watching chat (then thread) for "${endKw}" from host (timeout ${timeoutSec}s)...`);
 
+  // Phase 1: poll main chat until we find the host's thread root reply.
+  // Phase 2: poll the thread itself (where [END] actually lands — main chat
+  // does NOT receive sub-thread replies).
+  const { listThreadMessages } = await import("../lib/feishu.js");
   while (Date.now() < deadline) {
     await new Promise(res => setTimeout(res, 8000));
     try {
-      const lr = await listChatMessages(tok0, chatId, {
-        startTime: Math.floor(start / 1000) - 5, pageSize: 50, sort: "ByCreateTimeAsc",
-      });
-      if (lr.code !== 0) continue;
-      const items = lr.data?.items || [];
+      let items;
+      if (threadId) {
+        const tr = await listThreadMessages(tok0, threadId, { pageSize: 50, sort: "ByCreateTimeAsc" });
+        if (tr.code !== 0) continue;
+        items = tr.data?.items || [];
+      } else {
+        const lr = await listChatMessages(tok0, chatId, {
+          startTime: Math.floor(start / 1000) - 5, pageSize: 50, sort: "ByCreateTimeAsc",
+        });
+        if (lr.code !== 0) continue;
+        items = lr.data?.items || [];
+        // Look for the host's first message (thread root) and pivot to thread polling.
+        const hostRoot = items.find(m => m.sender?.id === fc.hostApp && m.thread_id);
+        if (hostRoot) {
+          threadId = hostRoot.thread_id;
+          console.log(`  [${Math.round((Date.now() - start) / 1000)}s] thread opened: ${threadId.slice(-8)} — switching to thread poll`);
+          continue;
+        }
+      }
       if (items.length !== lastSeen) {
-        console.log(`  [${Math.round((Date.now() - start) / 1000)}s] msgs=${items.length}`);
+        const where = threadId ? "thread" : "chat";
+        console.log(`  [${Math.round((Date.now() - start) / 1000)}s] ${where}.msgs=${items.length}`);
         lastSeen = items.length;
       }
       const ended = items.some(m => {
@@ -457,14 +528,14 @@ async function cmdVerify(cfg) {
       });
       if (ended) {
         const elapsed = Math.round((Date.now() - start) / 1000);
-        console.log(`✓ END detected after ${elapsed}s`);
+        console.log(`✓ END detected after ${elapsed}s (thread ${threadId?.slice(-8) || "?"}, ${lastSeen} msgs)`);
         process.exit(0);
       }
     } catch (e) {
       console.error(`  poll: ${e.message}`);
     }
   }
-  console.error(`✗ timeout — no [END] within ${timeoutSec}s`);
+  console.error(`✗ timeout — no [END] within ${timeoutSec}s (thread=${threadId?.slice(-8) || "no thread opened"}, ${lastSeen} msgs)`);
   process.exit(1);
 }
 
