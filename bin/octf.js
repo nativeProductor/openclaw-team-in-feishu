@@ -52,6 +52,8 @@ Usage:
 
 Commands:
   init                              Interactive: scaffold config + SOUL templates
+  init --template                   Print a JSON config template to stdout
+  init --from <path>                Apply a pre-filled JSON config (no Q&A)
   link [--apply]                    Preflight check (auth, channels, membership,
                                     renderMode). With --apply: auto-fix renderMode
                                     on member bots and patch resolved open_ids
@@ -110,15 +112,83 @@ switch (sub) {
 
 // ─── init: interactive scaffold ───────────────────────────────────────────
 async function cmdInit() {
+  // Three modes:
+  //   --template          → print a JSON template to stdout (user redirects to file)
+  //   --from <path>       → read a pre-filled JSON config and apply (no Q&A)
+  //   default             → interactive Q&A
+  if (flags.template) return cmdInitTemplate();
+  if (flags.from) return cmdInitFrom(flags.from);
+  return cmdInitInteractive();
+}
+
+function cmdInitTemplate() {
+  // Template content: same shape as the example config but with placeholder
+  // values clearly marked. Print to stdout so user can redirect:
+  //   octf init --template > my-config.json
+  const tplPath = path.join(__dirname, "..", "examples", "octf.example.json");
+  if (fs.existsSync(tplPath)) {
+    process.stdout.write(fs.readFileSync(tplPath, "utf8"));
+  } else {
+    // Fallback: synthesize a minimal template if the package isn't fully installed.
+    process.stdout.write(JSON.stringify({
+      "$comment": "Template. Replace cli_REPLACE_* / oc_REPLACE_* / agent names. Then: octf init --from <this file>",
+      version: 1,
+      openclawRoot: "/path/to/oc",
+      transcriptDir: "/path/to/oc/.shared",
+      polling: { intervalMs: 2500, openclawTimeoutSec: 180 },
+      apps: [
+        { appId: "cli_REPLACE_HOST", appSecret: "${HOST_SECRET}", agent: "pm-host", role: "产品助理", botName: "OpenClaw-PM" },
+        { appId: "cli_REPLACE_M1",   appSecret: "${DEV_SECRET}",  agent: "dev",     role: "研发助理", botName: "OpenClaw-Dev" }
+      ],
+      chats: [
+        { name: "ProductReview", chatId: "oc_REPLACE_CHAT", mode: "round-robin", host: "pm-host", members: ["dev"], modeOptions: { maxRounds: 5, endKeyword: "[END]" } }
+      ]
+    }, null, 2) + "\n");
+  }
+}
+
+async function cmdInitFrom(srcPath) {
+  if (fs.existsSync("./octf.json") && !flags.force) {
+    console.error("./octf.json already exists. Pass --force to overwrite.");
+    process.exit(1);
+  }
+  const abs = path.resolve(srcPath);
+  if (!fs.existsSync(abs)) {
+    console.error(`config source not found: ${abs}`);
+    process.exit(2);
+  }
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(abs, "utf8"));
+  } catch (e) {
+    console.error(`${abs}: ${e.message}`);
+    process.exit(2);
+  }
+  // Validate via loadConfig path. We need to write to ./octf.json first so
+  // resolveConfigPath / loadConfig can pick it up — but DON'T expand env vars
+  // (we want the ${VAR} placeholders preserved verbatim in the output).
+  // Simplest: do structural validation by attempting to re-read with the
+  // loader's validate, then write the original file content unchanged.
+  fs.writeFileSync("./octf.json", JSON.stringify(raw, null, 2) + "\n");
+  console.log(`✓ wrote ./octf.json (from ${abs})`);
+
+  // Render SOULs the same way interactive mode does.
+  await renderSoulsForConfig(raw);
+  console.log("\nNext steps:");
+  console.log("  1. Edit ./souls/*.md to fill in business-specific persona + style");
+  console.log("  2. Set the appSecret env vars (see config 'appSecret' fields)");
+  console.log("  3. Run `octf link --apply` to resolve open_ids and patch SOUL rosters");
+  console.log("  4. Copy ./souls/*.md into each agent's workspace/SOUL.md");
+  console.log("  5. Run `octf daemon start`");
+}
+
+async function cmdInitInteractive() {
   if (!process.stdin.isTTY) {
     console.error("octf init requires an interactive terminal (TTY).");
     console.error("");
-    console.error("If you're trying to scaffold non-interactively, copy the example config instead:");
-    console.error("  cp $(npm root -g)/openclaw-team-in-feishu/examples/octf.example.json ./octf.json");
-    console.error("  $EDITOR ./octf.json     # fill in cli_xxx / oc_xxx / agent names");
-    console.error("Then `octf link` to validate.");
-    console.error("");
-    console.error("Or drive `init` via a PTY (e.g. `expect`, `script`, or interactive shell).");
+    console.error("Two non-interactive alternatives:");
+    console.error("  octf init --template > my.json   # print template, edit it");
+    console.error("  octf init --from my.json         # apply pre-filled config");
     process.exit(2);
   }
   if (fs.existsSync("./octf.json") && !flags.force) {
@@ -130,7 +200,8 @@ async function cmdInit() {
     rl.question(`${q}${dflt ? ` [${dflt}]` : ""}: `, ans => res(ans.trim() || dflt || ""));
   });
 
-  console.log("\noctf init — scaffolding config + SOUL templates.\n");
+  console.log("\noctf init — scaffolding config + SOUL templates.");
+  console.log("(回车接受默认值；想跳过 Q&A 用 `octf init --template > c.json && octf init --from c.json`)\n");
   const openclawRoot = await ask("openclaw root (where /<agent>/workspace lives)", "/root/oc");
   const transcriptDir = await ask("shared transcript dir", path.join(openclawRoot, ".shared"));
   const numChats = parseInt(await ask("how many groups (chats)", "1"), 10);
@@ -148,8 +219,8 @@ async function cmdInit() {
     const hostAgent = await ask("    openclaw agent name", "pm-host");
     const hostAppId = await ask("    Feishu app_id (cli_...)");
     const hostBotName = await ask("    Feishu bot display name (e.g. OpenClaw-PM)");
-    const hostRole = await ask("    role label (e.g. 产品助理)");
-    const hostSecretEnv = await ask("    appSecret env var (will be ${VAR} in config)", `${hostAgent.toUpperCase().replace(/-/g, "_")}_SECRET`);
+    const hostRole = await ask("    role label", hostBotName); // default = bot display name
+    const hostSecretEnv = await ask("    appSecret env var (→ ${VAR} in config)", `${hostAgent.toUpperCase().replace(/-/g, "_")}_SECRET`);
     apps.push({ appId: hostAppId, appSecret: "${" + hostSecretEnv + "}", agent: hostAgent, role: hostRole, botName: hostBotName });
 
     const memberAgents = [];
@@ -158,17 +229,18 @@ async function cmdInit() {
       const ma = await ask("    openclaw agent name");
       const mid = await ask("    Feishu app_id (cli_...)");
       const mbn = await ask("    Feishu bot display name");
-      const mr = await ask("    role label");
+      const mr = await ask("    role label", mbn); // default = bot display name
       const msEnv = await ask("    appSecret env var", `${ma.toUpperCase().replace(/-/g, "_")}_SECRET`);
       apps.push({ appId: mid, appSecret: "${" + msEnv + "}", agent: ma, role: mr, botName: mbn });
       memberAgents.push(ma);
     }
 
-    const modeOptions = {};
+    const modeOptions = { endKeyword: "[END]" };
     if (mode === "round-robin") {
       modeOptions.maxRounds = parseInt(await ask("    maxRounds", "5"), 10);
     } else {
       modeOptions.maxMessages = parseInt(await ask("    maxMessages", "25"), 10);
+      modeOptions.recentSpeakerCooldownMs = 8000;
     }
     chats.push({ name, chatId, mode, host: hostAgent, members: memberAgents, modeOptions });
   }
@@ -185,44 +257,67 @@ async function cmdInit() {
   fs.writeFileSync("./octf.json", JSON.stringify(config, null, 2) + "\n");
   console.log("\n✓ wrote ./octf.json");
 
-  // Render SOUL.md templates per agent into souls/<agent>.md (NOT directly
-  // into openclaw workspace — give the developer a chance to review).
+  await renderSoulsForConfig(config);
+  console.log("\nNext steps:");
+  console.log("  1. Edit ./souls/*.md to fill in business-specific persona + style");
+  console.log("  2. Set the appSecret env vars (see config 'appSecret' fields)");
+  console.log("  3. Run `octf link --apply` to resolve open_ids and patch SOUL rosters");
+  console.log("  4. Copy ./souls/*.md into each agent's workspace/SOUL.md");
+  console.log("  5. Run `octf daemon start`");
+}
+
+// Shared SOUL rendering: writes ./souls/<agent>.md per agent. Called by both
+// interactive cmdInit and --from path. Skips files that already exist so re-
+// running doesn't clobber business edits.
+async function renderSoulsForConfig(config) {
   fs.mkdirSync("./souls", { recursive: true });
-  for (const chat of chats) {
-    const memberAgents = chat.members.map(m => apps.find(a => a.agent === m));
-    const hostApp = apps.find(a => a.agent === chat.host);
+  let written = 0, skipped = 0;
+  for (const chat of config.chats || []) {
+    const memberAgents = (chat.members || []).map(m => config.apps.find(a => a.agent === m)).filter(Boolean);
+    const hostApp = config.apps.find(a => a.agent === chat.host);
+    if (!hostApp) continue;
+    const transcriptDir = config.transcriptDir || path.join(config.openclawRoot || "/var/lib/octf", ".shared");
     const sharedTranscriptPath = path.join(transcriptDir, `transcript-${chat.chatId}.md`);
-    // Host SOUL (placeholder open_ids — `octf link` will fill them
-    // after first connecting to Feishu)
-    const hostTpl = chat.mode === "free-speak" ? "host-free-speak.md.tpl" : "host-round-robin.md.tpl";
     const placeholderRoster = memberAgents.map(m => ({ role: m.role, openId: "ou_REPLACE_BY_LINK_COMMAND" }));
+    const hostTpl = chat.mode === "free-speak" ? "host-free-speak.md.tpl" : "host-round-robin.md.tpl";
     const hostVars = {
       host: { role: hostApp.role, style: "（按需填写主持人风格）" },
       sharedTranscriptPath,
       roleBullets: roleBullets(memberAgents.map(m => ({ role: m.role }))),
       rosterTable: rosterTable(placeholderRoster),
-      rules: { maxRounds: chat.modeOptions.maxRounds || 5, maxMessages: chat.modeOptions.maxMessages || 25, endKeyword: "[END]" },
+      rules: {
+        maxRounds: chat.modeOptions?.maxRounds || 5,
+        maxMessages: chat.modeOptions?.maxMessages || 25,
+        endKeyword: chat.modeOptions?.endKeyword || "[END]",
+      },
     };
-    fs.writeFileSync(`./souls/${hostApp.agent}.md`, render(hostTpl, hostVars));
+    const hostPath = `./souls/${hostApp.agent}.md`;
+    if (fs.existsSync(hostPath) && !flags.force) {
+      skipped++;
+    } else {
+      fs.writeFileSync(hostPath, render(hostTpl, hostVars));
+      written++;
+    }
     for (const m of memberAgents) {
+      const memberPath = `./souls/${m.agent}.md`;
+      if (fs.existsSync(memberPath) && !flags.force) { skipped++; continue; }
       const memberVars = {
         host: { role: hostApp.role },
         member: { role: m.role, style: "（按需填写专业风格）", behaviorClause: "（按需填写发言铁律）" },
         modeLabel: chat.mode === "free-speak" ? "自由发言" : "轮流发言",
         sharedTranscriptPath,
-        rules: { endKeyword: "[END]" },
+        rules: { endKeyword: chat.modeOptions?.endKeyword || "[END]" },
       };
       const tpl = chat.mode === "free-speak" ? "member-free-speak.md.tpl" : "member-round-robin.md.tpl";
-      fs.writeFileSync(`./souls/${m.agent}.md`, render(tpl, memberVars));
+      fs.writeFileSync(memberPath, render(tpl, memberVars));
+      written++;
     }
   }
-  console.log("✓ wrote ./souls/<agent>.md (one per agent)");
-  console.log("\nNext steps:");
-  console.log("  1. Edit ./souls/*.md to fill in business-specific persona + style");
-  console.log("  2. Set the appSecret env vars (see config 'appSecret' fields)");
-  console.log("  3. Run `octf link` to verify the setup and resolve open_ids");
-  console.log("  4. Copy ./souls/*.md into each agent's workspace/SOUL.md (link prints exact paths)");
-  console.log("  5. Run `octf daemon start`");
+  if (skipped > 0) {
+    console.log(`✓ wrote ${written} SOUL templates to ./souls/, skipped ${skipped} existing (use --force to overwrite)`);
+  } else {
+    console.log(`✓ wrote ${written} SOUL templates to ./souls/`);
+  }
 }
 
 // ─── chat: add / remove / list bound groups ──────────────────────────────

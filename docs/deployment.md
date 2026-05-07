@@ -19,8 +19,8 @@ The most common shape: install globally, run as a system unit, secrets in a root
 # 1. Install. Install:
 git clone https://github.com/nativeProductor/openclaw-team-in-feishu.git /opt/openclaw-team-in-feishu
 cd /opt/openclaw-team-in-feishu
-sudo npm install
-sudo npm link
+sudo npm install --no-audit --no-fund
+sudo npm link --no-audit --no-fund
 which octf    # → /usr/bin/octf or similar
 
 # 2. Create config + secrets directory.
@@ -116,7 +116,7 @@ If you don't have systemd (e.g. Docker, macOS dev), use `pm2`:
 
 ```bash
 git clone https://github.com/nativeProductor/openclaw-team-in-feishu.git
-cd openclaw-team-in-feishu && npm install && sudo npm link
+cd openclaw-team-in-feishu && npm install --no-audit --no-fund && sudo npm link --no-audit --no-fund
 npm install -g pm2
 
 cat > ecosystem.config.cjs <<'EOF'

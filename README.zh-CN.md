@@ -114,19 +114,28 @@
 ```bash
 git clone https://github.com/nativeProductor/openclaw-team-in-feishu.git
 cd openclaw-team-in-feishu
-npm install
-sudo npm link
+npm install --no-audit --no-fund
+sudo npm link --no-audit --no-fund
 octf --help
 ```
+
+（`--no-audit --no-fund` 跳过 npm registry 的审计步骤，国内网络环境下能快几十秒。装出来的功能完全一致。）
 
 ---
 
 ## 快速上手
 
 ```bash
-# 1. 交互式生成 config + SOUL 模板
+# 1. 生成 config + SOUL 模板
 mkdir -p /etc/octf && cd /etc/octf
+
+# 交互式 Q&A：
 octf init
+
+# 或模板模式（多 agent 时更快）：
+#   octf init --template > my-config.json
+#   $EDITOR my-config.json     # 填 cli_xxx / oc_xxx / agent / member
+#   octf init --from my-config.json
 
 # 2. 编辑每个 SOUL，填业务人设和行为规则
 $EDITOR souls/pm-host.md

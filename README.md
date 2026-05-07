@@ -114,19 +114,28 @@ Only the host bot's `[END]` ends a thread. A human or other bot posting `[END]` 
 ```bash
 git clone https://github.com/nativeProductor/openclaw-team-in-feishu.git
 cd openclaw-team-in-feishu
-npm install
-sudo npm link
+npm install --no-audit --no-fund
+sudo npm link --no-audit --no-fund
 octf --help
 ```
+
+(`--no-audit --no-fund` skips registry-side checks that can be slow on some networks; functional install is unaffected.)
 
 ---
 
 ## Quick start
 
 ```bash
-# 1. Scaffold config + SOUL templates (interactive)
+# 1. Scaffold config + SOUL templates
 mkdir -p /etc/octf && cd /etc/octf
+
+# Interactive Q&A:
 octf init
+
+# OR template-based (faster if you have many agents):
+#   octf init --template > my-config.json
+#   $EDITOR my-config.json     # fill in cli_xxx / oc_xxx / agents / members
+#   octf init --from my-config.json
 
 # 2. Edit each SOUL with your business persona / behavior rules
 $EDITOR souls/pm-host.md   # ... and one per agent
