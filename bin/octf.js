@@ -181,6 +181,19 @@ async function cmdInitFrom(srcPath) {
   }
   if (secretsLines.length) {
     const secretsPath = "./secrets.env";
+    // Idempotency guard: don't silently overwrite existing secrets file —
+    // user may have rotated credentials there since the last run. Force is
+    // the same flag that gates octf.json overwrite for symmetry.
+    if (fs.existsSync(secretsPath) && !flags.force) {
+      console.error(
+        `${path.resolve(secretsPath)} already exists.\n` +
+        `  Refusing to overwrite — your existing secrets may have been rotated.\n` +
+        `  Either:\n` +
+        `    (a) merge the new ${secretsLines.length} secret(s) into the existing file by hand, OR\n` +
+        `    (b) re-run with --force to overwrite (the existing secrets.env will be replaced).`
+      );
+      process.exit(1);
+    }
     fs.writeFileSync(secretsPath, secretsLines.join("\n") + "\n");
     fs.chmodSync(secretsPath, 0o600);
     console.log(`✓ extracted ${secretsLines.length} secrets to ${path.resolve(secretsPath)} (chmod 600); octf.json now references them via \${VAR}`);

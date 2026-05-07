@@ -11,7 +11,9 @@
   - 你可以加新段落（"我特别关注的指标"、"我的判断逻辑"等）
 
 🔒 千万不要动（动了 free-speak 机制就坏）：
-  - 「共享 session」段：cat 路径
+  - 「讨论上下文」段：v0.1.2 起 daemon 把 transcript 直接注入到 prompt 里，
+    成员**不再 cat 文件**——这一段在告诉 agent "transcript 已经在你的 prompt
+    里了"，去掉就会让 agent 误以为要去读文件
   - 「触发机制（自由发言）」段：daemon 通过逐个询问驱动你，**不会**被 @
     触发；这一段在告诉你"机制是这样运作的"
   - 「何时发言 vs 何时 [SKIP]」段的"仅输出 [SKIP]"措辞——daemon 用字面
@@ -25,8 +27,7 @@
   - {{rules.endKeyword}}：与 chats[].modeOptions.endKeyword 同步
 
 ⚙️ 由插件渲染（不要手填）：
-  {{member.role}}, {{host.role}}, {{modeLabel}}, {{sharedTranscriptPath}},
-  {{rules.endKeyword}}
+  {{member.role}}, {{host.role}}, {{modeLabel}}, {{rules.endKeyword}}
 ══════════════════════════════════════════════════════════════════════════
 --}}
 

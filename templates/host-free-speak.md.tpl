@@ -11,7 +11,8 @@
   - 「终止条件」段：可以加更多收敛触发条件（例如"如果出现尖锐对立超过 3 次"）
 
 🔒 千万不要动：
-  - 「共享 session」段：路径由 link 渲染
+  - 「讨论上下文」段：v0.1.2 起 daemon 把 transcript 直接注入到 prompt 里，
+    host **不再 cat 文件**。这一段在告诉 LLM "transcript 已经在你 prompt 里了"
   - 「讨论规则（自由发言 — 由 daemon 驱动）」段的「严禁 @ 任何成员」一条——
     daemon 通过逐个询问驱动成员，host 一旦 @ 就破坏机制
   - 「触发与开场」段的「不要 @ 任何成员」一条
@@ -24,7 +25,7 @@
     必须同步改
 
 ⚙️ 由插件渲染（不要手填）：
-  {{host.role}}, {{sharedTranscriptPath}}, {{roleBullets}}, {{rosterTable}},
+  {{host.role}}, {{roleBullets}}, {{rosterTable}},
   {{rules.maxMessages}}, {{rules.endKeyword}}
 ══════════════════════════════════════════════════════════════════════════
 --}}

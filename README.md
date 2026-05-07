@@ -23,8 +23,9 @@ You've built N OpenClaw agents — each runs and responds individually. This pro
 **What it doesn't**
 
 - Doesn't create OpenClaw agents (use OpenClaw's own CLI)
-- Doesn't replace OpenClaw's Feishu plugin (member auto-reply in round-robin mode depends on it)
 - Isn't a general Feishu bot framework
+
+> **v0.1.2 contract change.** From v0.1.2 onwards the daemon owns *all* dispatch — every bot's OpenClaw native Feishu plugin must be **disabled**. The previous "host disabled / member enabled" split is gone. This unblocks multi-chat agents (the same agent can serve multiple Feishu groups). If you're upgrading from v0.1.1, see [docs/upgrading.md](docs/upgrading.md).
 
 ---
 
@@ -39,39 +40,39 @@ You've built N OpenClaw agents — each runs and responds individually. This pro
                              │                │
               ┌──────────────┴────────────────┴──────────────┐
               │  octf daemon                                 │
-              │  (single process, one async loop per chat)   │
+              │  (single process, one async loop per chat,   │
+              │   per-agent global mutex serializes invokes) │
               └────────▲────────────────────┬────────────────┘
                        │                    │ execFileSync
             transcript │                    │ "openclaw agent
-            (thread-id │                    │  --agent X
-            + chat-id  │                    │  --message <prompt>"
-            mirror)    │                    ▼
+            inject     │                    │  --agent X
+            (per       │                    │  --message <transcript+task>"
+            invoke)    │                    ▼
             ┌──────────┴───────┐   ┌──────────────────────┐
             │ /shared/         │   │  openclaw gateway    │
             │ transcript-*.md  │   │  per-agent SOULs     │
-            └────────▲─────────┘   │  Feishu plugin:      │
-                     │             │   host    DISABLED   │
-                     │ cat by      │   members ENABLED    │
-                     │ each agent  │                      │
-                     │ before      └──────────┬───────────┘
-                     │ replying              │ member @-mention auto-fires
-                     │                        │ (round-robin only)
-                     │                        ▼
-                     └─────────────── reply lands in thread
+            │ (daemon's        │   │  Feishu plugin:      │
+            │  bookkeeping)    │   │   ALL bots DISABLED  │
+            └──────────────────┘   │  (daemon owns reply) │
+                                   └──────────┬───────────┘
+                                              │ stdout: agent's reply text
+                                              ▼
+                                   daemon POSTs as the right bot →
+                                   reply lands in thread
 ```
 
 ### Three contracts
 
-1. **Discussion rules live in `SOUL.md`, not the daemon.** Turn order, max rounds, when to emit `[END]`, when to emit `[SKIP]` — all enforced by each agent's LLM reading its `SOUL.md`. The daemon does mechanism only: poll, write transcripts, fork openclaw, post replies. Changing the discussion shape (debate / review / brainstorm) means editing `SOUL.md` — daemon code does not change.
-2. **The host bot's OpenClaw Feishu plugin must be disabled; member bots' must be enabled.** With both enabled, host responses double-fire, creating duplicate threads and silent stalls. The daemon enforces this with a startup preflight check.
-3. **Transcript files are the single source of truth.** Both daemon and agents read state from the same Markdown files. Each message is appended once and mirrored under both `<thread_id>.md` (daemon's bookkeeping) and `<chat_id>.md` (path that `SOUL.md` instructs each agent to `cat`).
+1. **Discussion rules live in `SOUL.md`, not the daemon.** Turn order, max rounds, when to emit `[END]`, when to emit `[SKIP]` — all enforced by each agent's LLM reading its `SOUL.md`. The daemon does mechanism only: poll, inject transcript into prompts, fork openclaw, post replies. Changing the discussion shape (debate / review / brainstorm) means editing `SOUL.md` — daemon code does not change.
+2. **All bots' OpenClaw Feishu plugins must be disabled.** The daemon owns every reply: it watches the Feishu thread, invokes the right OpenClaw agent via CLI (with the current transcript injected into the prompt), and posts the reply itself using that bot's token. If any bot's native plugin is left enabled, you get double-fire — the daemon enforces this with a startup preflight check.
+3. **Transcript files are daemon-only state.** Each thread's transcript is written by the daemon to `transcript-<thread_id>.md` and mirrored to `transcript-<chat_id>.md`. Agents *do not* `cat` these files — daemon injects the relevant transcript into each invocation's prompt directly. This decouples `SOUL.md` from any specific chat, which is what enables a single agent to serve multiple Feishu groups.
 
 ### Modes
 
 | | round-robin | free-speak |
 |---|---|---|
 | Who picks next speaker | Host @-mentions members per `SOUL.md` order | Daemon polls each agent with a `[SKIP]` option; agents decide |
-| Member trigger | OpenClaw Feishu plugin auto-fires on `@-mention` | Daemon directly invokes via openclaw CLI |
+| Member trigger | Daemon detects host's @-mention in the thread, invokes that member via openclaw CLI, posts the reply as the member bot | Daemon directly invokes each candidate via openclaw CLI in shuffled order |
 | Convergence | Host emits `[END]` at max rounds or when sufficient | Host emits `[END]` once domains are covered or limit reached |
 | Best for | Reviews, planning sessions where every role must speak | Brainstorming, decisions where each domain decides relevance |
 
@@ -99,7 +100,7 @@ Only the host bot's `[END]` ends a thread. A human or other bot posting `[END]` 
 - N self-built apps (one per agent, including the host)
 - Each app added to its target group(s) as a bot member
 - Required scopes per role — see [docs/feishu-permissions.md](docs/feishu-permissions.md)
-- For each group: host bot's OpenClaw Feishu plugin disabled, member bots' enabled
+- **Every bot's OpenClaw Feishu plugin must be disabled** (daemon owns dispatch since v0.1.2). The daemon enforces this at startup; misconfigured bots refuse to come up.
 
 ### Runtime
 
@@ -254,12 +255,13 @@ Full annotated example: [examples/octf.example.json](examples/octf.example.json)
 
 - `maxRounds` and `maxMessages` are soft bounds (LLM-honored, not daemon-enforced)
 - Daemon state is in-process memory; restart loses dedup tables
-- Each agent invocation receives the full transcript (input scales with cumulative message count)
+- Each agent invocation receives the full thread transcript injected into the prompt (input scales O(N²) with cumulative message count — fine at the default 5×5=25 max but expensive past that)
 - Polling cadence is 2.5s; user-to-host latency is typically 5–15s
 - Single OpenClaw gateway = single LLM queue across all groups
+- **Daemon is a single point of failure.** Since v0.1.2 the daemon owns all dispatch (every bot's native Feishu plugin is disabled), so if the daemon process is down, no bot replies — even to direct mentions. Production deployments should run it under systemd with `Restart=always`. See [docs/deployment.md](docs/deployment.md).
+- Same agent across multiple chats is **serialized** by a per-agent mutex (prevents OpenClaw session corruption). Cross-chat throughput for a heavily-shared agent drops to its single-stream rate; different agents still parallelize freely.
 - Threads can only be ended by the host bot emitting `[END]`; humans cannot interrupt mid-discussion by posting in the thread
 - Adding or removing a chat requires a daemon restart (config is read at startup)
-- Each agent can serve only one chat (SOUL.md ties an agent to one transcript path); to run the same role in multiple chats, create separate agent instances
 
 ---
 

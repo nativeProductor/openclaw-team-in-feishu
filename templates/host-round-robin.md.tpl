@@ -11,8 +11,9 @@
   - 你完全可以加新的段落（"业务背景"、"决策标准"等）
 
 🔒 不要动（动了 daemon 会卡住）：
-  - 「共享 session」段：transcript 文件路径必须是 daemon 写的那一份
-    （由 link 命令自动渲染，{{sharedTranscriptPath}} 别手填）
+  - 「讨论上下文」段：v0.1.2 起 daemon 把 transcript 直接注入到 prompt 里，
+    host **不再 cat 文件**。这一段在告诉 LLM "transcript 已经在你 prompt 里了"，
+    去掉就会让 host 误以为要去读文件
   - 「讨论规则」段：「必须由你 @ 才能发言」「@-tag 必须带前后文」这两条
     保留——daemon 的 invoke prompt 也在强化它们，少一条就有概率成员收到空消息
   - 「@ 语法」段：写法和约束保留，特别是「同一条消息只 @ 1 人」「输出 [END]
@@ -27,7 +28,7 @@
     （触发判断 + 开场逻辑 + 收口判断）
 
 ⚙️ 由插件渲染填充（你不要手动填）：
-  {{host.role}}, {{sharedTranscriptPath}}, {{roleBullets}}, {{rosterTable}},
+  {{host.role}}, {{roleBullets}}, {{rosterTable}},
   {{rules.maxRounds}}, {{rules.endKeyword}}
 ══════════════════════════════════════════════════════════════════════════
 --}}

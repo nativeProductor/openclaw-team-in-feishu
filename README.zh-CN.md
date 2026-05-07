@@ -23,8 +23,9 @@
 **它不做的事**
 
 - 不创建 OpenClaw 智能体（用 OpenClaw 自己的 CLI）
-- 不替代 OpenClaw 的飞书插件（轮流发言模式下成员自动回复仍依赖它）
 - 不是通用的飞书 bot 框架
+
+> **v0.1.2 契约变更。** 从 v0.1.2 开始，daemon 接管**所有**消息分发——每个 bot 的 OpenClaw 飞书插件都必须 **disabled**。之前"主持人 disabled / 成员 enabled"的非对称配置已经废弃。这个改动解锁了"同一个 agent 服务多个飞书群"的能力。从 v0.1.1 升级请看 [docs/upgrading.md](docs/upgrading.md)。
 
 ---
 
@@ -39,39 +40,39 @@
                              │                │
               ┌──────────────┴────────────────┴──────────────┐
               │  octf daemon                                 │
-              │  （单进程，每个群一个独立 async loop）         │
+              │  （单进程，每个群一个独立 async loop，         │
+              │    per-agent 全局 mutex 串行化所有 invoke）    │
               └────────▲────────────────────┬────────────────┘
                        │                    │ execFileSync
             transcript │                    │ "openclaw agent
-            (thread-id │                    │  --agent X
-            + chat-id  │                    │  --message <prompt>"
-             双写)     │                    ▼
+            （per-     │                    │  --agent X
+            invoke     │                    │  --message <transcript+任务>"
+            注入）     │                    ▼
             ┌──────────┴───────┐   ┌──────────────────────┐
             │ /shared/         │   │  openclaw gateway    │
             │ transcript-*.md  │   │  每 agent 的 SOUL    │
-            └────────▲─────────┘   │  飞书插件 enable：    │
-                     │             │   host    DISABLED   │
-                     │ 各 agent    │   members ENABLED    │
-                     │ 回复前 cat  │                      │
-                     │             └──────────┬───────────┘
-                     │                        │ 成员被 @ 时插件自动 dispatch
-                     │                        │（仅 round-robin 模式）
-                     │                        ▼
-                     └─────────────── 回复进入 thread
+            │ （daemon 内部     │   │  飞书插件状态：       │
+            │  bookkeeping）    │   │   全部 DISABLED      │
+            └──────────────────┘   │   （daemon 自己发回复）│
+                                   └──────────┬───────────┘
+                                              │ stdout: agent 的回复文本
+                                              ▼
+                                    daemon 用对应 bot 的 token POST →
+                                    回复进入 thread
 ```
 
 ### 三个核心契约
 
-1. **讨论规则在 `SOUL.md` 里，不在 daemon。** 发言顺序、最大轮数、何时输出 `[END]`、何时输出 `[SKIP]` —— 全部由各 agent 的 LLM 看 `SOUL.md` 自觉遵守。daemon 只做机制：轮询、写 transcript、fork openclaw、发回复。换讨论形式（debate / review / brainstorm）只改 SOUL.md，daemon 一行不动。
-2. **主持人 bot 的 OpenClaw 飞书插件必须 disabled，成员 bot 必须 enabled。** 两边都 enabled 会让主持人双发言、生成重复 thread、daemon 死锁。daemon 启动时硬检查这一点。
-3. **transcript 文件是唯一 ground truth。** daemon 和 agent 都从同一份 Markdown 文件读状态。每条消息追加一次，分别按 `<thread_id>.md`（daemon 内部用）和 `<chat_id>.md`（SOUL.md 里 `cat` 路径用）双写。
+1. **讨论规则在 `SOUL.md` 里，不在 daemon。** 发言顺序、最大轮数、何时输出 `[END]`、何时输出 `[SKIP]` —— 全部由各 agent 的 LLM 看 `SOUL.md` 自觉遵守。daemon 只做机制：轮询、把 transcript 注入到 prompt、fork openclaw、发回复。换讨论形式（debate / review / brainstorm）只改 SOUL.md，daemon 一行不动。
+2. **所有 bot 的 OpenClaw 飞书插件都必须 disabled。** daemon 接管所有回复：监听 thread → 用 CLI 调对应 agent（把当前 transcript 注入到 prompt）→ 用该 bot 的 token 自己 POST 到飞书。任何一个 bot 的 native 插件没关，就会双发——daemon 启动时会硬检查这一点。
+3. **transcript 文件是 daemon 私有状态。** 每个 thread 的 transcript 由 daemon 写到 `transcript-<thread_id>.md`，并按 chat 镜像一份到 `transcript-<chat_id>.md`。**agent 不再 `cat` 这些文件**——daemon 在每次调用时把相关 transcript 直接塞进 prompt。这把 `SOUL.md` 与具体 chat 解耦，正是"同一个 agent 服务多个飞书群"得以成立的前提。
 
 ### 两种模式对比
 
 | | round-robin（轮流发言） | free-speak（自由发言） |
 |---|---|---|
 | 谁决定下一个发言 | 主持人按 SOUL.md 顺序 @ 下一位 | daemon 用 `[SKIP]` 选项轮询每位 agent，agent 自决 |
-| 成员触发机制 | OpenClaw 飞书插件收到 @ 自动 dispatch | daemon 直接通过 openclaw CLI 调用 |
+| 成员触发机制 | daemon 检测到 host 在 thread 里的 @-mention，CLI 调对应成员 agent，再用成员 bot token 自己 POST 回复 | daemon 直接 CLI 调每位候选 agent（顺序 shuffle） |
 | 收敛条件 | 主持人达到最大轮数 OR 信息充分 → `[END]` | 主持人覆盖所有专业角度 OR 总发言到上限 → `[END]` |
 | 适合场景 | 评审、规划会等需要保证每人发言的讨论 | 头脑风暴、依靠各专业域自主介入的决策 |
 
@@ -99,7 +100,7 @@
 - N 个自建应用（每个 agent 一个，包括主持人）
 - 每个应用都加入了对应的群作为机器人成员
 - 各角色的 scope 已开通——详见 [docs/feishu-permissions.md](docs/feishu-permissions.md)
-- 每个群：主持人 bot 的 OpenClaw 飞书插件 disabled，成员 bot enabled
+- **所有 bot 的 OpenClaw 飞书插件都必须 disabled**（v0.1.2 起 daemon 接管 dispatch）。daemon 启动时会硬检查这一点，任何一个没关都会拒绝起来。
 
 ### 运行环境
 
@@ -251,12 +252,13 @@ octf verify --chat <oc_xxx> --topic "烟测话题"
 
 - `maxRounds` 和 `maxMessages` 是软上限（LLM 自觉遵守，daemon 不强制截断）
 - daemon 状态全在进程内存，重启会丢去重表
-- 每次 agent 调用注入完整 transcript（输入 token 随累计消息数增长）
+- 每次 agent 调用注入完整 thread transcript 到 prompt（输入 token 随累计消息数 O(N²) 增长——默认 5×5=25 上限内毫无压力，超过就要注意成本）
 - 轮询周期 2.5s，用户 @ 到主持人开口典型 5–15s
 - 单 OpenClaw gateway = 单 LLM 队列，多群并发会排队
+- **daemon 是单点故障。** v0.1.2 起 daemon 接管所有 dispatch（每个 bot 的 native 飞书插件都关掉），daemon 挂了就没有任何 bot 会回复——即使被直接 @。生产部署务必上 systemd `Restart=always`，详见 [docs/deployment.md](docs/deployment.md)。
+- 同一个 agent 跨 chat 是**串行的**（per-agent mutex 防止 OpenClaw session 串扰）。被多个 chat 共享的 agent 单流速率即跨 chat 总速率；不同 agent 仍并行。
 - thread 只能由主持人 bot 输出 `[END]` 结束；真用户在 thread 内发消息无法打断讨论
 - 新增/移除 chat 后需要重启 daemon（配置只在启动时读一次）
-- 每个智能体只能绑到一个群（SOUL.md 把 agent 和 transcript 路径一一绑定）；想在多个群跑同一个角色，需要建独立的 agent 实例
 
 ---
 

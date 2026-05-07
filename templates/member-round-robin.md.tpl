@@ -11,7 +11,9 @@
   - 你可以加新段落（"我擅长的领域"、"我会回避的话题"等）
 
 🔒 千万不要动：
-  - 「共享 session」段：cat 路径
+  - 「讨论上下文」段：v0.1.2 起 daemon 把 transcript 直接注入到 prompt 里，
+    成员**不再 cat 文件**——这一段在告诉 agent "transcript 已经在你的 prompt
+    里了"，去掉就会让 agent 误以为要去读文件
   - 「行为铁律」段第 1 条「只在被 host @ 时发言」——这是 round-robin
     模式的核心，去掉成员就会乱说话
   - 「行为铁律」段第 3 条「发言结尾不要 @ 任何人」——成员越权 @ 会破坏
@@ -22,8 +24,7 @@
   - {{rules.endKeyword}}：必须与 chats[].modeOptions.endKeyword 一致
 
 ⚙️ 由插件渲染（不要手填）：
-  {{member.role}}, {{host.role}}, {{modeLabel}}, {{sharedTranscriptPath}},
-  {{rules.endKeyword}}
+  {{member.role}}, {{host.role}}, {{modeLabel}}, {{rules.endKeyword}}
 ══════════════════════════════════════════════════════════════════════════
 --}}
 
