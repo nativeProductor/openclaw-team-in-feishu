@@ -484,9 +484,8 @@ async function chatAdd(cfg) {
 
   console.log("\nNext:");
   console.log("  1. Edit souls/*.md if you rendered fresh ones above (fill in business persona)");
-  console.log("  2. Copy them into your agent workspaces (cp souls/<agent>.md /path/to/oc/<agent>/workspace/SOUL.md)");
-  console.log("  3. Run `octf link --apply` to resolve open_ids and patch SOUL rosters");
-  console.log("  4. Restart daemon to pick up the new chat: `octf daemon restart`");
+  console.log("  2. Run `octf link --apply` — resolves open_ids, patches SOUL rosters, AND deploys to agent workspaces in one step");
+  console.log("  3. Restart daemon to pick up the new chat: `octf daemon restart`");
 }
 
 function chatRemove(cfg) {
@@ -673,6 +672,33 @@ async function cmdLink(cfg) {
       else note("ok", `${a.agent}: SOUL.md present (${size}b)`);
     } else {
       note("err", `${a.agent}: SOUL.md missing at ${soul}`);
+    }
+  }
+
+  // [4b] If --apply was passed, deploy local ./souls/<agent>.md → agent
+  // workspaces. This makes `link --apply` a one-stop "after editing souls,
+  // also push them to workspaces" — eliminates the footgun where users
+  // edit souls/, run `link --apply` to patch open_ids, then forget to
+  // re-copy the patched files into agent workspaces (so the daemon sees
+  // stale roster open_ids at runtime).
+  if (flags.apply) {
+    let deployed = 0, skipped = 0;
+    for (const a of cfg.apps) {
+      if (!chatBoundAgents.has(a.agent)) { skipped++; continue; }
+      const src = path.resolve("./souls/" + a.agent + ".md");
+      if (!fs.existsSync(src)) { skipped++; continue; }
+      const dst = path.join(cfg.openclawRoot, a.agent, "workspace", "SOUL.md");
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      // Only copy if content differs (avoid touching mtime needlessly).
+      const srcContent = fs.readFileSync(src, "utf8");
+      const dstContent = fs.existsSync(dst) ? fs.readFileSync(dst, "utf8") : null;
+      if (srcContent !== dstContent) {
+        fs.writeFileSync(dst, srcContent);
+        deployed++;
+      }
+    }
+    if (deployed > 0) {
+      note("ok", `--apply deployed ${deployed} SOUL.md file${deployed === 1 ? "" : "s"} from ./souls/ → agent workspaces`);
     }
   }
 
