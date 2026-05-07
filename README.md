@@ -244,6 +244,7 @@ Full annotated example: [examples/octf.example.json](examples/octf.example.json)
 ## Documentation
 
 - [docs/deployment.md](docs/deployment.md) — production deployment via systemd / pm2 / Docker
+- [docs/upgrading.md](docs/upgrading.md) — version migration notes (start here when pulling a newer release)
 - [docs/feishu-permissions.md](docs/feishu-permissions.md) — Feishu scopes per role, error codes, threat model
 - [docs/developer-guide.md](docs/developer-guide.md) — architecture, adding modes, debugging
 

@@ -20,7 +20,9 @@ EnvironmentFile=/etc/octf/secrets.env
 
 # Daemon logs to stderr/stdout — systemd captures into journal.
 # Use `octf daemon logs` (or journalctl -u octf -f) to tail.
-ExecStart=/usr/bin/node /usr/lib/node_modules/openclaw-team-in-feishu/bin/octf.js daemon start --config /etc/octf/octf.json
+# /usr/bin/octf is created by `npm link`. If your npm prefix is elsewhere,
+# replace with the absolute path you get from `which octf`.
+ExecStart=/usr/bin/octf daemon start --config /etc/octf/octf.json
 
 # Restart on crash but back off to avoid tight loops on bad config.
 Restart=on-failure

@@ -369,6 +369,25 @@ async function chatAdd(cfg) {
     if (m === host) { console.error(`'${m}' cannot be both host and member`); process.exit(2); }
   }
 
+  // Each agent can only serve one chat: SOUL.md ties an agent to a single
+  // sharedTranscriptPath, and each agent has one workspace dir. If we let
+  // the same agent into two chats, its SOUL points to one chat's transcript
+  // and reading-before-replying breaks for the other.
+  const agentToChat = new Map();
+  for (const c of cfg.chats) {
+    agentToChat.set(c.host, c.name || c.chatId);
+    for (const m of c.members) agentToChat.set(m, c.name || c.chatId);
+  }
+  const conflicts = [host, ...members].filter(a => agentToChat.has(a));
+  if (conflicts.length > 0) {
+    console.error("the following agents are already bound to another chat:");
+    for (const a of conflicts) console.error(`  ${a}  →  chat "${agentToChat.get(a)}"`);
+    console.error("\nEach agent can serve only one chat (SOUL.md ties an agent to one transcript path).");
+    console.error("Either pick different agents for this new chat, or remove them from existing chats first:");
+    console.error(`  octf chat remove --chat <oc_xxx>`);
+    process.exit(1);
+  }
+
   const modeOptions = { endKeyword: "[END]" };
   if (mode === "round-robin") {
     modeOptions.maxRounds = parseInt(flags["max-rounds"] || "5", 10);

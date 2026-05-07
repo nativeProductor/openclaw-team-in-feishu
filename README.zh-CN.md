@@ -241,6 +241,7 @@ octf verify --chat <oc_xxx> --topic "烟测话题"
 ## 文档
 
 - [docs/deployment.md](docs/deployment.md) —— systemd / pm2 / Docker 生产部署
+- [docs/upgrading.md](docs/upgrading.md) —— 版本升级迁移说明（拉新版本前先看这个）
 - [docs/feishu-permissions.md](docs/feishu-permissions.md) —— 飞书 scope per role + 错误码 + 威胁模型
 - [docs/developer-guide.md](docs/developer-guide.md) —— 架构、加新模式、调试指南
 
