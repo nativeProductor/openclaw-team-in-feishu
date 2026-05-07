@@ -152,34 +152,68 @@ async function cmdInitFrom(srcPath) {
     console.error("./octf.json already exists. Pass --force to overwrite.");
     process.exit(1);
   }
-  const abs = path.resolve(srcPath);
-  if (!fs.existsSync(abs)) {
-    console.error(`config source not found: ${abs}`);
-    process.exit(2);
+
+  // Read source: either a file path or '-' for stdin (paste workflow).
+  let rawText;
+  if (srcPath === "-" || srcPath === "/dev/stdin") {
+    rawText = fs.readFileSync(0, "utf8"); // fd 0 = stdin
+  } else {
+    const abs = path.resolve(srcPath);
+    if (!fs.existsSync(abs)) {
+      console.error(`config source not found: ${abs}`);
+      process.exit(2);
+    }
+    rawText = fs.readFileSync(abs, "utf8");
   }
   let raw;
-  try {
-    raw = JSON.parse(fs.readFileSync(abs, "utf8"));
-  } catch (e) {
-    console.error(`${abs}: ${e.message}`);
-    process.exit(2);
-  }
-  // Validate via loadConfig path. We need to write to ./octf.json first so
-  // resolveConfigPath / loadConfig can pick it up — but DON'T expand env vars
-  // (we want the ${VAR} placeholders preserved verbatim in the output).
-  // Simplest: do structural validation by attempting to re-read with the
-  // loader's validate, then write the original file content unchanged.
-  fs.writeFileSync("./octf.json", JSON.stringify(raw, null, 2) + "\n");
-  console.log(`✓ wrote ./octf.json (from ${abs})`);
+  try { raw = JSON.parse(rawText); }
+  catch (e) { console.error(`config JSON parse error: ${e.message}`); process.exit(2); }
 
-  // Render SOULs the same way interactive mode does.
+  // Step 1: extract plaintext secrets to secrets.env (don't put raw secrets
+  // into octf.json — they end up in git, transcripts, etc).
+  const secretsLines = [];
+  for (const a of raw.apps || []) {
+    if (typeof a.appSecret === "string" && !a.appSecret.startsWith("${")) {
+      const envName = `${a.agent.toUpperCase().replace(/-/g, "_")}_SECRET`;
+      secretsLines.push(`${envName}=${a.appSecret}`);
+      a.appSecret = "${" + envName + "}";
+    }
+  }
+  if (secretsLines.length) {
+    const secretsPath = "./secrets.env";
+    fs.writeFileSync(secretsPath, secretsLines.join("\n") + "\n");
+    fs.chmodSync(secretsPath, 0o600);
+    console.log(`✓ extracted ${secretsLines.length} secrets to ${path.resolve(secretsPath)} (chmod 600); octf.json now references them via \${VAR}`);
+  }
+
+  // Step 2: write octf.json (with secrets stripped out)
+  fs.writeFileSync("./octf.json", JSON.stringify(raw, null, 2) + "\n");
+  console.log(`✓ wrote ./octf.json`);
+
+  // Step 3: render souls (uses apps[i].soul fields if present)
   await renderSoulsForConfig(raw);
+
+  // Step 4: deploy souls into agent workspaces if --apply (or --auto-deploy)
+  const apply = flags.apply || flags["auto-deploy"];
+  if (apply && raw.openclawRoot) {
+    let deployed = 0;
+    for (const app of raw.apps || []) {
+      const soulSrc = path.resolve("./souls/" + app.agent + ".md");
+      const soulDst = path.join(raw.openclawRoot, app.agent, "workspace/SOUL.md");
+      if (fs.existsSync(soulSrc)) {
+        fs.mkdirSync(path.dirname(soulDst), { recursive: true });
+        fs.copyFileSync(soulSrc, soulDst);
+        deployed++;
+      }
+    }
+    console.log(`✓ deployed ${deployed} SOUL.md files to ${raw.openclawRoot}/<agent>/workspace/`);
+  }
+
   console.log("\nNext steps:");
-  console.log("  1. Edit ./souls/*.md to fill in business-specific persona + style");
-  console.log("  2. Set the appSecret env vars (see config 'appSecret' fields)");
-  console.log("  3. Run `octf link --apply` to resolve open_ids and patch SOUL rosters");
-  console.log("  4. Copy ./souls/*.md into each agent's workspace/SOUL.md");
-  console.log("  5. Run `octf daemon start`");
+  if (!apply) console.log(`  1. Copy souls into agent workspaces: \`for a in <agents>; do cp souls/$a.md ${raw.openclawRoot || "/root/oc"}/$a/workspace/SOUL.md; done\``);
+  if (secretsLines.length) console.log(`  ${apply ? "1" : "2"}. Load secrets: \`set -a; source secrets.env; set +a\` before next step`);
+  console.log(`  ${apply ? "2" : "3"}. \`octf link --apply\`  # configures openclaw flags + resolves open_ids + patches SOUL rosters`);
+  console.log(`  ${apply ? "3" : "4"}. \`octf daemon start\`  # OR install systemd unit (see docs/deployment.md)`);
 }
 
 async function cmdInitInteractive() {
@@ -280,8 +314,10 @@ async function renderSoulsForConfig(config) {
     const sharedTranscriptPath = path.join(transcriptDir, `transcript-${chat.chatId}.md`);
     const placeholderRoster = memberAgents.map(m => ({ role: m.role, openId: "ou_REPLACE_BY_LINK_COMMAND" }));
     const hostTpl = chat.mode === "free-speak" ? "host-free-speak.md.tpl" : "host-round-robin.md.tpl";
+    // Use apps[i].soul fields if provided in config; fall back to placeholders.
+    const hostStyle = hostApp.soul?.hostStyle || hostApp.soul?.style || "（按需填写主持人风格）";
     const hostVars = {
-      host: { role: hostApp.role, style: "（按需填写主持人风格）" },
+      host: { role: hostApp.role, style: hostStyle },
       sharedTranscriptPath,
       roleBullets: roleBullets(memberAgents.map(m => ({ role: m.role }))),
       rosterTable: rosterTable(placeholderRoster),
@@ -303,7 +339,11 @@ async function renderSoulsForConfig(config) {
       if (fs.existsSync(memberPath) && !flags.force) { skipped++; continue; }
       const memberVars = {
         host: { role: hostApp.role },
-        member: { role: m.role, style: "（按需填写专业风格）", behaviorClause: "（按需填写发言铁律）" },
+        member: {
+          role: m.role,
+          style: m.soul?.style || "（按需填写专业风格）",
+          behaviorClause: m.soul?.behaviorClause || "（按需填写发言铁律）",
+        },
         modeLabel: chat.mode === "free-speak" ? "自由发言" : "轮流发言",
         sharedTranscriptPath,
         rules: { endKeyword: chat.modeOptions?.endKeyword || "[END]" },
