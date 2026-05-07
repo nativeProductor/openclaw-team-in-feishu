@@ -650,9 +650,22 @@ async function cmdLink(cfg) {
     }
   }
 
-  // [4] Agent workspace SOUL.md presence
+  // [4] Agent workspace SOUL.md presence — only for chat-bound agents.
+  // init only renders souls/<agent>.md for agents that are referenced by
+  // some chats[] entry (as host or member); apps[] entries with no chat
+  // binding (e.g. inventory the user might add a chat for later) do NOT
+  // get a SOUL — so link must not error on their absence either.
+  const chatBoundAgents = new Set();
+  for (const ch of cfg.chats || []) {
+    if (ch.host) chatBoundAgents.add(ch.host);
+    for (const m of ch.members || []) chatBoundAgents.add(m);
+  }
   console.log("\n[4] Agent workspaces");
   for (const a of cfg.apps) {
+    if (!chatBoundAgents.has(a.agent)) {
+      note("ok", `${a.agent}: not bound to any chat — SOUL.md not required (will be needed when you add this agent to a chat)`);
+      continue;
+    }
     const soul = path.join(cfg.openclawRoot, a.agent, "workspace", "SOUL.md");
     if (fs.existsSync(soul)) {
       const size = fs.statSync(soul).size;

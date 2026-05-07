@@ -253,15 +253,15 @@ Full annotated example: [examples/octf.example.json](examples/octf.example.json)
 
 ## Limitations
 
-- `maxRounds` and `maxMessages` are soft bounds (LLM-honored, not daemon-enforced)
-- Daemon state is in-process memory; restart loses dedup tables
-- Each agent invocation receives the full thread transcript injected into the prompt (input scales O(N²) with cumulative message count — fine at the default 5×5=25 max but expensive past that)
-- Polling cadence is 2.5s; user-to-host latency is typically 5–15s
-- Single OpenClaw gateway = single LLM queue across all groups
-- **Daemon is a single point of failure.** Since v0.1.2 the daemon owns all dispatch (every bot's native Feishu plugin is disabled), so if the daemon process is down, no bot replies — even to direct mentions. Production deployments should run it under systemd with `Restart=always`. See [docs/deployment.md](docs/deployment.md).
-- Same agent across multiple chats is **serialized** by a per-agent mutex (prevents OpenClaw session corruption). Cross-chat throughput for a heavily-shared agent drops to its single-stream rate; different agents still parallelize freely.
-- Threads can only be ended by the host bot emitting `[END]`; humans cannot interrupt mid-discussion by posting in the thread
-- Adding or removing a chat requires a daemon restart (config is read at startup)
+- `maxRounds` and `maxMessages` are soft bounds (LLM-honored, not daemon-enforced).
+- Each agent invocation receives the full thread transcript injected into its prompt — input cost scales O(N²) with cumulative message count. Default 5×5 = 25-message cap is fine; past that, cost rises noticeably.
+- Polling cadence is 2.5s; user-to-host latency is typically 5–15s.
+- **Cross-chat parallelism boundary.** Different agents across chats run in parallel (independent per-chat async loops, gated only by your OpenClaw gateway's LLM concurrency). The **same** agent invoked from two chats simultaneously is serialized by a per-agent mutex (prevents OpenClaw session corruption). Net effect: the more two chats share members, the more serial they become.
+- Threads can only be ended by the host bot emitting `[END]`; humans cannot interrupt mid-discussion by posting in the thread.
+- Adding/removing a chat or rotating secrets requires `octf daemon restart` (config + env vars are loaded at startup). **Editing `SOUL.md` does NOT require a restart** — the daemon never reads SOUL files; each `openclaw agent` invocation reads SOUL fresh from disk.
+- Daemon state is in-process memory; an unexpected restart loses the message-dedup table (worst case: one boundary message gets re-processed once).
+
+> **Production deployment note.** Since v0.1.2 the daemon owns all dispatch (every bot's native Feishu plugin is disabled). If the daemon process is down, no bot replies — even to direct mentions. Run under systemd with `Restart=always` or equivalent. See [docs/deployment.md](docs/deployment.md).
 
 ---
 

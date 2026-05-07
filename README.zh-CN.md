@@ -251,14 +251,14 @@ octf verify --chat <oc_xxx> --topic "烟测话题"
 ## 已知限制
 
 - `maxRounds` 和 `maxMessages` 是软上限（LLM 自觉遵守，daemon 不强制截断）
-- daemon 状态全在进程内存，重启会丢去重表
-- 每次 agent 调用注入完整 thread transcript 到 prompt（输入 token 随累计消息数 O(N²) 增长——默认 5×5=25 上限内毫无压力，超过就要注意成本）
+- 每次 agent 调用注入完整 thread transcript 到 prompt——输入 token 随累计消息数 O(N²) 增长。默认 5×5=25 上限内毫无压力，超过就要注意成本
 - 轮询周期 2.5s，用户 @ 到主持人开口典型 5–15s
-- 单 OpenClaw gateway = 单 LLM 队列，多群并发会排队
-- **daemon 是单点故障。** v0.1.2 起 daemon 接管所有 dispatch（每个 bot 的 native 飞书插件都关掉），daemon 挂了就没有任何 bot 会回复——即使被直接 @。生产部署务必上 systemd `Restart=always`，详见 [docs/deployment.md](docs/deployment.md)。
-- 同一个 agent 跨 chat 是**串行的**（per-agent mutex 防止 OpenClaw session 串扰）。被多个 chat 共享的 agent 单流速率即跨 chat 总速率；不同 agent 仍并行。
+- **跨群并行有边界**：不同 agent 跨群**并行**执行（daemon 按 chat 一个独立 async loop，瓶颈只是 OpenClaw gateway 的 LLM 并发）；**同一个 agent 同时被两个群叫**会被 per-agent mutex 串行化（防 OpenClaw session 上下文串扰）。结论：两个群的成员越重叠，越偏串行
 - thread 只能由主持人 bot 输出 `[END]` 结束；真用户在 thread 内发消息无法打断讨论
-- 新增/移除 chat 后需要重启 daemon（配置只在启动时读一次）
+- 加群 / 移除 chat / 换秘钥要 `octf daemon restart`（chats 和 env vars 在启动时载入）。**改 SOUL 不需要重启**——daemon 本身从不读 SOUL，每次调 agent 都是 `openclaw agent` 直接读最新 SOUL
+- daemon 状态在进程内存，意外重启会丢消息去重表（最坏情况：某条边界消息被重复处理一次）
+
+> **生产部署提示。** v0.1.2 起 daemon 接管所有 dispatch，daemon 挂了就没有任何 bot 会回复——务必用 systemd `Restart=always` 兜底，详见 [docs/deployment.md](docs/deployment.md)。
 
 ---
 
