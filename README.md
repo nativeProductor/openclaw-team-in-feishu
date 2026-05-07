@@ -75,6 +75,15 @@ You've built N OpenClaw agents — each runs and responds individually. This pro
 | Convergence | Host emits `[END]` at max rounds or when sufficient | Host emits `[END]` once domains are covered or limit reached |
 | Best for | Reviews, planning sessions where every role must speak | Brainstorming, decisions where each domain decides relevance |
 
+### When can the host end a discussion?
+
+The host can emit `[END]` at any of its invocation points — it is not forced to wait for `maxRounds` or `maxMessages`. Each invocation passes the full transcript to the host's LLM, which decides per its `SOUL.md` whether to output a closing summary + `[END]` or to continue. Invocation cadence:
+
+- **round-robin**: after every member reply
+- **free-speak**: at least once per polling cycle (host is the tail candidate when daemon walks the queue)
+
+Only the host bot's `[END]` ends a thread. A human or other bot posting `[END]` in the thread is treated as content, not as a control signal.
+
 ---
 
 ## Prerequisites
@@ -211,6 +220,7 @@ Full annotated example: [examples/octf.example.json](examples/octf.example.json)
 - Each agent invocation receives the full transcript (input scales with cumulative message count)
 - Polling cadence is 2.5s; user-to-host latency is typically 5–15s
 - Single OpenClaw gateway = single LLM queue across all groups
+- Threads can only be ended by the host bot emitting `[END]`; humans cannot interrupt mid-discussion by posting in the thread
 
 ---
 
