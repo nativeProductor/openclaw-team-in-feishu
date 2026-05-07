@@ -256,6 +256,7 @@ octf verify --chat <oc_xxx> --topic "烟测话题"
 - 单 OpenClaw gateway = 单 LLM 队列，多群并发会排队
 - thread 只能由主持人 bot 输出 `[END]` 结束；真用户在 thread 内发消息无法打断讨论
 - 新增/移除 chat 后需要重启 daemon（配置只在启动时读一次）
+- 每个智能体只能绑到一个群（SOUL.md 把 agent 和 transcript 路径一一绑定）；想在多个群跑同一个角色，需要建独立的 agent 实例
 
 ---
 

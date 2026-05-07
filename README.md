@@ -259,6 +259,7 @@ Full annotated example: [examples/octf.example.json](examples/octf.example.json)
 - Single OpenClaw gateway = single LLM queue across all groups
 - Threads can only be ended by the host bot emitting `[END]`; humans cannot interrupt mid-discussion by posting in the thread
 - Adding or removing a chat requires a daemon restart (config is read at startup)
+- Each agent can serve only one chat (SOUL.md ties an agent to one transcript path); to run the same role in multiple chats, create separate agent instances
 
 ---
 

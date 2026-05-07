@@ -30,12 +30,13 @@ RestartSec=10
 StartLimitInterval=300
 StartLimitBurst=5
 
-# Hardening (optional — relax if you need broader fs access).
+# Hardening (light defaults — daemon needs broad read access to agent
+# workspaces AND write access to openclaw's runtime dirs).
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=strict
-ReadWritePaths=/var/log /root/oc/.shared
-ProtectHome=read-only
+# More aggressive hardening (ProtectSystem=strict + ProtectHome) breaks
+# openclaw's bundled-channel runtime which writes under /root/.openclaw.
+# If you need it, add: ReadWritePaths=/var/log /root/oc /root/.openclaw
 
 [Install]
 WantedBy=multi-user.target
