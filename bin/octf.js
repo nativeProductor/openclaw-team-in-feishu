@@ -500,7 +500,7 @@ async function cmdLink(cfg) {
   console.log("\n[1] openclaw channels");
   let pre = preflight(cfg);
   if (pre.ok) {
-    note("ok", `openclaw channels: ${pre.hostCount} hosts disabled, ${pre.memberCount} members enabled, all renderMode=raw`);
+    note("ok", `openclaw channels: ${pre.hostCount} hosts + ${pre.memberCount} members all disabled (daemon drives all dispatch)`);
   } else {
     // If --apply was passed, try to auto-fix renderMode violations (the only
     // class of violation it's safe to silently fix; we never auto-flip
@@ -525,7 +525,7 @@ async function cmdLink(cfg) {
       }
     }
     if (pre.ok) {
-      note("ok", `openclaw channels: ${pre.hostCount} hosts disabled, ${pre.memberCount} members enabled`);
+      note("ok", `openclaw channels: ${pre.hostCount} hosts + ${pre.memberCount} members all disabled`);
     } else {
       for (const r of pre.reasons) note("err", r);
     }
