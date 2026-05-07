@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// octf CLI. Five commands per architect review §4(a):
+// octf CLI. Five commands:
 //   init    interactive scaffold of config + souls/ for first-time users
 //   link    preflight + Feishu auth + group membership + openclaw channels
 //   daemon  run / stop / restart / logs / status (foreground or systemd)

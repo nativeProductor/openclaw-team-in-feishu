@@ -57,7 +57,7 @@ Two new modes that should be straightforward (no daemon changes, only SOUL.md au
 
 Modes that need daemon changes:
 
-- **True parallel composition** — multiple agents compose simultaneously, daemon resolves conflicts. Requires removing the serial constraint in `tryFreeSpeakStep` and adding a "post arbitration" step (e.g. host picks the most relevant of N replies). This is non-trivial and contradicts the architect-recommended "feels weird in real life" semantics.
+- **True parallel composition** — multiple agents compose simultaneously, daemon resolves conflicts. Requires removing the serial constraint in `tryFreeSpeakStep` and adding a "post arbitration" step (e.g. host picks the most relevant of N replies). This is non-trivial and contradicts natural conversational pacing.
 - **Cross-thread context** — discussions reference prior discussions. Requires an external store keyed by chat_id; transcript is currently per-thread.
 - **Human in-thread intervention** — currently `pollMain` only triggers kickoff from main-chat @-mentions. To handle a human @ in an active thread, extend `pollThread` to detect user senders and inject their message into transcript + nudge the host.
 
@@ -97,7 +97,7 @@ Quick triage tree:
    - Run host invocation manually: `openclaw agent --agent <host> --message "test"` — confirms openclaw side is healthy.
 
 4. **`[thread NEW]` logged but member doesn't auto-reply (round-robin)?**
-   - Most common cause: PM's @-message has only the `<at>` tag with no other text. The @-ed member's openclaw plugin sees an empty body and returns 0 replies. Fixed in v10.2 by tightening the kickoff prompt; verify your host SOUL.md follows the "@ tag must be followed by an instruction" rule.
+   - Most common cause: PM's @-message has only the `<at>` tag with no other text. The @-ed member's openclaw plugin sees an empty body and returns 0 replies. Verify your host SOUL.md follows the "@ tag must be followed by an instruction" rule.
    - Or: member bot's openclaw native plugin is disabled. Run `openclaw channels status --probe`.
 
 5. **Round-robin: `[trigger RR]` fires but next host invoke produces empty?** Likely an openclaw `Command failed` error. Check daemon log for `openclaw exit N: <stderr>` lines — daemon captures stderr explicitly.

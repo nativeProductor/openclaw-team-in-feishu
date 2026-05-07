@@ -16,7 +16,7 @@ The most common shape: install globally, run as a system unit, secrets in a root
 ### One-time setup
 
 ```bash
-# 1. Install. v0.1 isn't on npm registry yet — clone + npm link:
+# 1. Install. Install:
 git clone https://github.com/nativeProductor/openclaw-team-in-feishu.git /opt/openclaw-team-in-feishu
 cd /opt/openclaw-team-in-feishu
 sudo npm install
@@ -182,7 +182,7 @@ The OpenClaw gateway runs in a different container or on the host — `openclaw-
 
 ## Gotchas
 
-- **Daemon crashes on preflight failure** — this is by design (see README "Architecture"). Read the violations in journalctl and apply them.
+- **Daemon crashes on preflight failure** — this is by design (see "How it works" in README). Read the violations in journalctl and apply them.
 - **First @ after deploy might miss the kickoff window** — daemon's `mainProcessedIds` starts empty and `mainLastTime = now - 30s`. If you @ the host within the same 30s as deploy, you may miss the first event. Wait 30s after deploy before triggering.
 - **Config / SOUL changes need a daemon restart** — they're loaded at startup only.
 - **Free-speak runs are slow** — N member-invocations + transcript of growing size. Plan for ~10 minutes per discussion in the worst case.
